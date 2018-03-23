@@ -1,0 +1,66 @@
+#!/usr/bin/python
+
+import pdb
+import sys
+
+#Dictionary
+
+
+from decimal import *
+
+dictionary={}
+
+with open ("FCIDUMP") as f:
+   for dummy in xrange(4):
+     next(f)
+   for line in f:
+     integral = float(line.split()[0])   #I_iiii
+     first= [line.split()[1], line.split()[2], line.split()[3], line.split()[4]]    #(I_)ijkl
+     indizes=[int(first[0]), int(first[1]),int(first[2]), int(first[3])]
+     dictionary[(indizes[0]), (indizes[1]), (indizes[2]), (indizes[3])] = integral
+
+for key,value in dictionary.iteritems(): print key,value
+
+
+# G-Matrix
+
+NORB = 13   #Number of Basisfunctions
+
+import numpy
+G = numpy.zeros((NORB+1, NORB+1))
+P = numpy.eye(NORB+1, dtype= float)
+print P
+my = 1
+ny = 1
+si = 1
+la = 1
+G[my,ny]=1
+
+pdb.set_trace()
+
+for my in range (1, NORB+1):
+  for ny in range (1, my):
+    G[my, ny]=0
+    for la in range (1, NORB+1):
+      for si in range (1, la):
+
+        print ('my, ny, la, si', my, ny, la, si)
+        if la>my:
+          print 1
+          G[my, ny] += 2*P[la, si] * (dictionary[la,si,my,ny]- (1/2)*dictionary[la, my, si, ny])
+        else:
+          print 2
+          G[my, ny] += 2*P[la, si] * (dictionary[my,ny,la,si]- (1/2)*dictionary[la, my, si, ny])
+
+      si=la
+      if la > my :
+        print 3
+        G[my, ny] += P[la, si] * (dictionary[la,si,my,ny]- (1/2)*dictionary[la, my, si, ny])
+      elif my==la==si:
+        print 4
+        G[my, ny] += P[la, si] * (dictionary[la,si,my,ny]- (0.5)*dictionary[my, la, si, ny])
+      else:
+        print 5
+        G[my, ny] += P[la, si] * (dictionary[my,ny,la,si]- (0.5)*dictionary[my, la, si, ny])
+
+print G
