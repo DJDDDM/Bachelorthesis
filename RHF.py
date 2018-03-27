@@ -39,16 +39,16 @@ def main(add_elec=0,read_addelec=True):
  
   #Energy calculation
 
-  f=0     #traces
-  g=0
-  h=0
-  for i in range (1,int((NELEC/2)+1)):
-    f+=F[i,i]
-    g+=G[i,i]
-    h+=H[i,i]
-  
+  E=dictionary[0,0,0,0]
+  for my in range (1,NORB+1):
+    for ny in range (1,my):
+      E+=2*P[my,ny]*(H[my,ny]+0.5*G[my,ny])
+    ny=my
+    E+=P[my,ny]*(H[my,ny]+0.5*G[my,ny])
+
+
   #print ((2*f-g)+dictionary[0,0,0,0],'f-0.5g')
-  return ((h+f)+dictionary[0,0,0,0],'Energy')
+  return (E,'Energy')
   #print (2*h+g+dictionary[0,0,0,0],'h+0.5*g')
 
 def gmatrix(dictionary,NORB,P):

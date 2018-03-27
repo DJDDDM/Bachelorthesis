@@ -48,7 +48,7 @@ def main(add_elec=0,read_addelec=True):
     Pb=pmatrixb(NORB,NELECb,vecsb,Pb)
     Pt=pmatrixt(Pa,Pb)
     E_0a=energya(NELECa,valsa)
-    print ('new Energya:',E_0a)
+    #print ('new Energya:',E_0a)
     if abs(E_0a-E_0_olda)<10**-5:
       break
     E_0_olda=E_0a
