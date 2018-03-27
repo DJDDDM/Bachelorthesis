@@ -9,8 +9,13 @@ from numpy import linalg as LA
 
 #Datadictionary
 def main(): 
-  NORB = 13   #Number of Basisfunctions
-  NELEC=8    #Number of Electrons
+  NORB=0
+  NORB = firstline()[0]   #Number of Basisfunctions
+  NELEC=0
+  NELEC= firstline()[1]    #Number of Electrons
+  electronadd=electroninp()
+  NELEC= NELEC + electronadd 
+  print (NELEC)
   my=0        #Indizes for AOs
   ny=0
   la=0
@@ -22,7 +27,7 @@ def main():
 
   #Dictionary
   dictionary={}
-
+  i=False
   with open ("FCIDUMP") as f:
      for dummy in range(4):
        next(f)
@@ -158,6 +163,21 @@ def dkey2(my,ny,la,si):         #exchange
           return(la, my,si,ny)
       else: print ('error3')
   else: print ('error4')
+
+def firstline():          #read NORB and NELEC from FCIDUMP
+  
+  with open ("FCIDUMP") as f:
+    for line in f:
+      word= line.split()[2]
+      NORB=(int(word.split(',')[0]))
+      word= line.split()[3]
+      NELEC=(int(word.split(',')[0]))
+      return (NORB,NELEC)
+
+def electroninp():
+  print ('How much electrons you want to add?')
+  electronadd=int(input())
+  return electronadd
 
 def gtest(NORB,dictionary):   #tests
 
