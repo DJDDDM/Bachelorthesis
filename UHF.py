@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/python
 #########UHF######
 #librarys
 import pdb
@@ -30,10 +30,12 @@ def main(add_elec=0,read_addelec=True):
   #Control Loop
 
           #initial P guess
-  for i in range (1, int((NELEC)+1)):
+  for i in range (1, NELECa):
     Pa[i,i]=1
+  for i in range (1, NELECb):
     Pb[i,i]=1
-    Pt[i,i]=Pa[i,i]+Pb[i,i]    
+
+  Pt=Pa+Pb    
 
   while True:
     Ga=gmatrixa(dictionary,NORB,Pa)
@@ -49,7 +51,7 @@ def main(add_elec=0,read_addelec=True):
     Pt=pmatrixt(Pa,Pb)
     E_0a=energya(NELECa,valsa)
     #print ('new Energya:',E_0a)
-    if abs(E_0a-E_0_olda)<10**-5:
+    if abs(E_0a-E_0_olda)<10**-7:
       break
     E_0_olda=E_0a
  
