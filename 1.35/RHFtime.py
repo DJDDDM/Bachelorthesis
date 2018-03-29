@@ -6,6 +6,7 @@ import sys
 from decimal import *
 import numpy
 from numpy import linalg as LA
+import time
 
 def main(add_elec=0,read_addelec=True): 
     #Datadictionary
@@ -13,7 +14,7 @@ def main(add_elec=0,read_addelec=True):
   NELEC= firstline()[1]
   if read_addelec: NELEC+=electroninp() #Number of electrons
   else: NELEC+=add_elec
-  print NELEC
+  print ('NELEC:',NELEC,'NORB:',NORB)
   if (NELEC % 2 != 0) or (NELEC==0):
     print ('odd/zero number of electrons. 1 Electron added')
     NELEC+=1
@@ -21,6 +22,7 @@ def main(add_elec=0,read_addelec=True):
   G = numpy.zeros((NORB+1, NORB+1))   #Gmatrix
   P = numpy.zeros((NORB+1, NORB+1))   #Gmatrix
   dictionary= dict()
+  iters=0       #number of iterations
 
   #Control Loop
 
@@ -28,18 +30,24 @@ def main(add_elec=0,read_addelec=True):
   for i in range (1, int((NELEC/2)+1)):
     P[i,i]=2
 
-
+  print ('starting loop')
   while True:
+    t0=time.time()
     G=gmatrix(dictionary,NORB,P)
     H=hmatrix(NORB,dictionary)
     F=fmatrix(NORB,G,H)
     vals,vecs=eigenvector(F)
     P=pmatrix(NORB,NELEC,vecs,P)
     E_0=energy(NELEC,vals)
-    #print ('new Energy:',E_0)
+    t=time.time()-t0
+    print ('new epsilon:',E_0, 'in time:',t)
     if abs(E_0-E_0_old)<10**-5:
       break
     E_0_old=E_0
+    iters+=1
+    print (iters)
+    #if iters%5==0: print ('new Energy:',E_0)
+    if iters>50: break
  
   #Energy calculation
 

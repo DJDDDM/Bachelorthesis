@@ -249,10 +249,11 @@ def dkey2(my,ny,la,si):         #exchange
 def firstline():          #read NORB and NELEC from FCIDUMP
   
   with open ("FCIDUMP") as f:
-    for line in f:
-      word= line.split()[2]
+      line=f.readline()
+      line=line.strip()
+      word= line.split('NORB=')[1]
       NORB=(int(word.split(',')[0]))
-      word= line.split()[3]
+      word= line.split('NELEC=')[1]
       NELEC=(int(word.split(',')[0]))
       return (NORB,NELEC)
 
