@@ -1,0 +1,245 @@
+#!/usr/bin/python3
+    #Import Library
+import numpy
+from scipy.optimize import minimize
+
+def main():
+    #Data Dictionary
+  NORB=dict()[0]
+  NELEC=dict()[1]
+  NELEC+=electroninp()
+  print (NELEC,NORB)
+  if NELEC%2==0:
+    NELECa=int(NELEC/2)
+    NELECb=NELECa
+  else:
+    NELECa=int((NELEC+1)/2)
+    NELECb=int((NELEC-1)/2)
+  dictionary=dict()[2]
+  Pa_cache=numpy.zeros((1000,NORB,NORB))
+  Pb_cache=numpy.zeros((1000,NORB,NORB))
+  Pt_cache=numpy.zeros((1000,NORB,NORB))
+  Fa_cache=numpy.zeros((1000,NORB,NORB))
+  Fb_cache=numpy.zeros((1000,NORB,NORB))
+  Pa=numpy.zeros((NORB,NORB))
+  Pb=numpy.zeros((NORB,NORB))
+  Pt=Pa+Pb
+  H=hmatrix(NORB,dictionary)
+  Ga=gamatrix(NORB,dictionary,Pa)
+  Gb=gbmatrix(NORB,dictionary,Pb)
+  Gt=gtmatrix(NORB,dictionary,Pt)
+  Fa=H+Gt+Ga
+  Fb=H+Gt+Gb
+  E_olda=0
+  iters=0
+  ediis_N=5
+  
+  for x in range(NELECa):
+    Pa[x,x]=1
+  Pa_cache[0,:,:]=Pa
+
+  for x in range(NELECb):
+    Pb[x,x]=1
+  Pb_cache[0,:,:]=Pb
+
+  Pt=Pa+Pb
+
+        #Control Loop
+  while True:
+    Ga=gamatrix(NORB,dictionary,Pa)
+    Gb=gbmatrix(NORB,dictionary,Pb)
+    Gt=gtmatrix(NORB,dictionary,Pt)
+    Fa=H+Gt+Ga
+    Fb=H+Gt+Gb
+    valsa,vecsa,E_0a=eigenvectora(Fa)
+    valsb,vecsb,E_0b=eigenvectorb(Fb)
+    print ('Epsilona:',E_0a,'Iteration:',iters)
+    if abs(E_0a-E_olda)<10**-10:  break
+    E_olda=E_0a
+    iters+=1
+    Pa=pmatrixa(NORB,NELECa,vecsa)
+    Pa_cache[iters,:,:]=Pa
+    Pb=pmatrixb(NORB,NELECb,vecsb)
+    Pb_cache[iters,:,:]=Pb
+    Pt=Pa+Pb
+    Pt_cache[iters,:,:]=Pt
+  
+  E=dictionary[-1,-1,-1,-1]
+  for my in range (NORB):
+    for ny in range (my):
+      E+=Pt[my,ny]*H[my,ny]+Pa[my,ny]*Fa[my,ny]+Pb[my,ny]*Fb[my,ny]
+    ny=my
+    E+=-0.5*(Pt[my,ny]*H[my,ny]+Pa[my,ny]*Fa[my,ny]+Pb[my,ny]*Fb[my,ny])
+  print ('Energy:',E,'after',iters,'Iterations')
+  return E
+
+def dict():
+  dictionary={}
+  with open ('FCIDUMP') as f:
+    line=f.readline()
+    line=line.strip()
+    NORB=line.split('NORB=')[1]
+    NORB=int(NORB.split(',')[0])
+    NELEC=line.split('NELEC=')[1]
+    NELEC=int(NELEC.split(',')[0])
+    for dummy in range(1,4):
+      next(f)
+    for line in f:
+      integral=float(line.split()[0])
+      indizes=[int(line.split()[1])-1,int(line.split()[2])-1,int(line.split()[3])-1,int(line.split()[4])-1]
+      dictionary[indizes[0],indizes[1],indizes[2],indizes[3]]=integral
+  return (NORB,NELEC,dictionary)
+
+
+def hmatrix(NORB,dictionary):
+  H=numpy.zeros((NORB, NORB))
+  for my in range (NORB):
+    for ny in range (my+1):
+      H[my,ny]=dictionary[my,ny,-1,-1]
+  for ny in range (NORB):
+    for my in range (ny):
+      H[my,ny]=H[ny,my]
+  return H
+
+def gamatrix(NORB,dictionary,Pa):
+  Ga=numpy.zeros((NORB,NORB))
+  for my in range (NORB):
+    for ny in range (my+1):
+      for la in range(NORB):
+        for si in range (la):
+          Ga[my,ny]+=-2*Pa[la,si]*dictionary[dkey2(my,ny,la,si)]
+        si=la
+        Ga[my,ny]+=-1*Pa[la,si]*dictionary[dkey2(my,ny,la,si)]
+  for ny in range (NORB):
+    for my in range (ny):
+      Ga[my,ny]=Ga[ny,my]
+  return Ga
+
+def gbmatrix(NORB,dictionary,Pb):
+  Gb=numpy.zeros((NORB,NORB))
+  for my in range (NORB):
+    for ny in range (my+1):
+      for la in range(NORB):
+        for si in range (la):
+          Gb[my,ny]+=-2*Pb[la,si]*dictionary[dkey2(my,ny,la,si)]
+        si=la
+        Gb[my,ny]+=-1*Pb[la,si]*dictionary[dkey2(my,ny,la,si)]
+  for ny in range (NORB):
+    for my in range (ny):
+      Gb[my,ny]=Gb[ny,my]
+  return Gb
+
+def gtmatrix(NORB,dictionary,Pt):
+  Gt=numpy.zeros((NORB,NORB))
+  for my in range (NORB):
+    for ny in range (my+1):
+      for la in range(NORB):
+        for si in range (la):
+          Gt[my,ny]+=2*Pt[la,si]*dictionary[dkey1(my,ny,la,si)]
+        si=la
+        Gt[my,ny]+=1*Pt[la,si]*dictionary[dkey1(my,ny,la,si)]
+  for ny in range (NORB):
+    for my in range (ny):
+      Gt[my,ny]=Gt[ny,my]
+  return Gt
+
+def eigenvectora(Fa):
+  E_0a=0
+  valsa, vecsa=numpy.linalg.eig(Fa)
+  idx=valsa.argsort()
+  valsa=valsa[idx]
+  vecsa=vecsa[idx]
+
+  for a in range(len(valsa)):
+    E_0a+=valsa[a]
+  return (valsa,vecsa,E_0a)
+
+def eigenvectorb(Fb):
+  E_0b=0
+  valsb, vecsb=numpy.linalg.eig(Fb)
+  idx=valsb.argsort()
+  valsb=valsb[idx]
+  vecsb=vecsb[idx]
+
+  for a in range(len(valsb)):
+    E_0b+=valsb[a]
+  return (valsb,vecsb,E_0b)
+
+def pmatrixa(NORB,NELECa,vecsa):
+  Pa=numpy.zeros((NORB,NORB))
+  for my in range (NORB):
+    for ny in range (NORB):
+      for a in range (int(NELECa)):
+        Pa[my,ny]+=vecsa[a,my]*vecsa[a,ny]
+  return Pa
+
+def pmatrixb(NORB,NELECb,vecsb):
+  Pb=numpy.zeros((NORB,NORB))
+  for my in range (NORB):
+    for ny in range (NORB):
+      for a in range (int(NELECb)):
+        Pb[my,ny]+=vecsb[a,my]*vecsb[a,ny]
+  return Pb
+
+def dkey1(my,ny,la,si):
+  if my>la or (my==la and ny>=si):
+    return(my,ny,la,si)
+  else:
+    return(la,si,my,ny)
+
+
+def dkey2(my,ny,la,si):
+  if my>=la:
+    if ny>=si:
+      return(my,la,ny,si)
+    else:
+      return(my,la,si,ny)
+  if my<la:
+    if ny>=si:
+      return(la,my,ny,si)
+    else:
+      return(la,my,si,ny)
+
+def fediis(c,P_cache,NORB,ediis_N,F_cache,iters,H):
+  f_ediis=0
+  for i in range (ediis_N):
+    f_ediis+=c[i]*energy(P_cache[iters-i,:,:],NORB,F_cache[iters-i,:,:],H)
+    for j in range (ediis_N):
+      f_ediis-=c[i]*c[j]*numpy.trace(numpy.transpose(P_cache[iters-i,:,:]-P_cache[iters-j,:,:])*(F_cache[iters-i,:,:]-F_cache[iters-j,:,:]))
+  return f_ediis
+
+def energy(P,NORB,F,H):
+  E=0
+  for my in range (NORB):
+    for ny in range (NORB):
+      E+=0.5*P[ny,my]*(H[my,ny]+F[my,ny])
+  return E
+
+def constraint1(c,ediis_N):
+  summe=1
+  for i in range (ediis_N):
+    summe-=c[i]
+  return summe
+
+def ediis(ediis_N,P_cache,NORB,F_cache,iters,H):
+  b=(0.0,1.0)
+  bnds =[]
+  c=[]
+  for i in range (ediis_N):
+    bnds.append(b)
+    c.append((1/ediis_N))
+  bnds=tuple(bnds)
+  con = {'type': 'eq', 'fun': constraint1, 'args': (ediis_N,)}
+  sol=minimize(fediis,c,args=(P_cache,NORB,ediis_N,F_cache,iters,H),method='SLSQP',bounds=bnds,constraints=con)
+  F=0
+  for i in range (ediis_N):
+    F+=sol.x[i]*F_cache[iters-i,:,:]
+  return F
+
+def electroninp():        #read electronaddinginput
+  print ('How much electrons you want to add?')
+  electronadd=int(input())
+  return electronadd
+
+if __name__=='__main__':
+  print (main())
