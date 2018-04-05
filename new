@@ -7,7 +7,7 @@ def main():
     #Data Dictionary
   NORB=dict()[0]
   NELEC=dict()[1]
-  #NELEC+=-2
+  NELEC+=electroninp()
   print (NELEC,NORB)
   dictionary=dict()[2]
   P=numpy.zeros((NORB,NORB))
@@ -17,10 +17,6 @@ def main():
   P_cache=numpy.zeros((1000,NORB,NORB))
   F_cache=numpy.zeros((1000,NORB,NORB))
   E_old=0
-  F_old=F
-  P_old=P
-  vecs_old=P
-  E_old_old=0
   iters=0
   ediis_N=5
   
@@ -39,11 +35,8 @@ def main():
       F_cache[iters,:,:]=F
     vals,vecs,E_0=eigenvector(F,NORB)
     print ('Epsilon:',E_0,'Iteration:',iters)
-    if abs(E_0-E_old)<10**-5:  break
-    E_old_old=E_old
+    if abs(E_0-E_old)<10**-10:  break
     E_old=E_0
-    P_old=P
-    F_old=F
     vecs_old=vecs
     iters+=1
     P=pmatrix(NORB,NELEC,vecs)
@@ -176,6 +169,10 @@ def ediis(ediis_N,P_cache,NORB,F_cache,iters,H):
     F+=sol.x[i]*F_cache[iters-i,:,:]
   return F
 
+def electroninp():        #read electronaddinginput
+  print ('How much electrons you want to add?')
+  electronadd=int(input())
+  return electronadd
 
 if __name__=='__main__':
   print (main())
