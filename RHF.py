@@ -11,6 +11,7 @@ def main(add_elec=0,read_addelec=True):
     #Datadictionary
   NORB = firstline()[0]   #Number of Basisfunctions
   NELEC= firstline()[1]
+  diis_N=10          #Number for koefficients in diis
   if read_addelec: NELEC+=electroninp() #Number of electrons
   else: NELEC+=add_elec
   print NELEC
@@ -19,15 +20,17 @@ def main(add_elec=0,read_addelec=True):
     NELEC+=1
   E_0_old=1
   G = numpy.zeros((NORB+1, NORB+1))   #Gmatrix
-  P = numpy.zeros((NORB+1, NORB+1))   #Gmatrix
+  P = numpy.zeros((NORB+1, NORB+1))   #Pmatrix
+  P_cache=numpy.ones((1000,NORB+1,NORB+1))
   dictionary= dict()
+  iters=0           #loopindex
 
   #Control Loop
 
           #initial P guess
-  for i in range (1, int((NELEC/2)+1)):
-    P[i,i]=2
-
+  for x in range (1, int((NELEC/2)+1)):
+    P[x,x]=2
+  P_cache[0]=P
 
   while True:
     G=gmatrix(dictionary,NORB,P)
@@ -35,11 +38,16 @@ def main(add_elec=0,read_addelec=True):
     F=fmatrix(NORB,G,H)
     vals,vecs=eigenvector(F)
     P=pmatrix(NORB,NELEC,vecs,P)
-    E_0=energy(NELEC,vals)
-    #print ('new Energy:',E_0)
+    #pdb.set_trace()
+    #P_cache[iters+1,:,:]=P
+    #if iters>15:
+    #  P=diis(F,P_cache,iters,diis_N,NORB)
+    E_0=energy(vals)
+    print ('new Energy:',E_0,'iters',iters)
     if abs(E_0-E_0_old)<10**-5:
       break
     E_0_old=E_0
+    iters+=1
  
   #Energy calculation
 
@@ -101,6 +109,7 @@ def fmatrix(NORB,G,H):
   return F;
 
 def eigenvector (F):    
+
   vals, vecs = LA.eig(F[1:,1:])     #gets rid of 0's and sorts the vecs and vals
   idx=vals.argsort()[::1]
   vals=vals[idx]
@@ -109,24 +118,18 @@ def eigenvector (F):
 
 def pmatrix(NORB,NELEC,vecs,P):
 
-  a=0
-  
   for my in range (1, NORB+1):
-    for ny in range (1, my+1):
+    for ny in range (1, NORB+1):
       P[my,ny]=0
       for a in range (int(NELEC/2)):
          P[my,ny]+=2*vecs[a,my-1]*vecs[a,ny-1]
   
-  for ny in range (2, NORB+1):    #mirror the offdiagonals
-    for my in range (1, ny):
-      P[my,ny]=P[ny,my]
   return P;
 
-def energy(NELEC,vals):
+def energy(vals):
   
   E_0=0
-    
-  for a in range (int(NELEC/2)):
+  for a in range (len(vals)):
     E_0+=vals[a]
   return (E_0)
 
@@ -202,6 +205,45 @@ def gtest(NORB,dictionary):   #tests
       G_t[my,ny]=G_t[ny,my]
 
   return (G_t)      
+
+def diis(F,P_cache,iters,diis_N,NORB):
+  A=numpy.zeros((diis_N+1,diis_N+1))
+  K=numpy.zeros((NORB+1,NORB+1))
+  Fa=F[1:,1:]
+  e=[0]
+  B=[1]
+  a=-1
+  #pdb.set_trace()
+  for i in range (diis_N):
+    A[i+1,0]=1
+    A[0,i+1]=1
+    P=P_cache[iters-diis_N+i,:,:]
+    P=P[1:,1:]
+    e[i]=0
+    a=-1
+    for my in range (NORB):
+      for ny in range (NORB):
+        d=0
+        for la in range (NORB):
+          d+=Fa[my,la]*P[la,ny]-Fa[la,ny]*P[my,la]
+        e[i]+=abs(d)
+    B.append(0)
+    e.append(0)
+
+  for i in range (diis_N):
+    for j in range (diis_N):
+      A[i+1,j+1]=e[i]*e[j]
+  x=[]
+  P=numpy.zeros((NORB+1,NORB+1))
+  try:
+    x=numpy.linalg.solve(A,B)
+    for i in range (diis_N):
+      P+=x[i+1]*P_cache[iters-diis_N+i]
+    return P
+  except:
+    diis_N-=1
+    P=diis(F,P_cache,iters,diis_N,NORB)
+    return P
 
 
 def hf():                   #tests
