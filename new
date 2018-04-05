@@ -7,7 +7,7 @@ def main():
     #Data Dictionary
   NORB=dict()[0]
   NELEC=dict()[1]
-  NELEC+=-2
+  #NELEC+=-2
   print (NELEC,NORB)
   dictionary=dict()[2]
   P=numpy.zeros((NORB,NORB))
@@ -23,7 +23,6 @@ def main():
   E_old_old=0
   iters=0
   ediis_N=5
-  diis_N=5
   
   for x in range(int((NELEC/2))):
     P[x,x]=2
@@ -32,13 +31,15 @@ def main():
         #Control Loop
   while True:
     G=gmatrix(NORB,dictionary,P)
-    F=numpy.add(H,G)
-    F_cache[iters,:,:]=F
     if iters>10:
       F=ediis(ediis_N,P_cache,NORB,F_cache,iters,H)
+      F_cache[iters,:,:]=F
+    else:
+      F=numpy.add(H,G)
+      F_cache[iters,:,:]=F
     vals,vecs,E_0=eigenvector(F,NORB)
     print ('Epsilon:',E_0,'Iteration:',iters)
-    #if abs(E_0-E_old)<10**-5 and abs(E_old-E_old_old)<10**-5 : break
+    if abs(E_0-E_old)<10**-5:  break
     E_old_old=E_old
     E_old=E_0
     P_old=P
