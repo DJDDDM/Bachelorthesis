@@ -9,21 +9,31 @@ import pdb
 def main(thresh=numpy.float64(10**-8)):
   global dtype
   dtype=numpy.dtype(numpy.float64)
-
   z0=numpy.float64(0)
   z05=numpy.float64(0.5)
   z2=numpy.float64(2)
-
-  NORB=dic()[0]
-  NELEC=dic()[1]
+  NORB,NELEC,E_nucc,onedictionary,twodictionary=dicfunction()
+  NELEC+=electroninp()
   print(NELEC,NORB)
-  dictionary=dic()[2]
+  print(E_nucc)
+  if NELEC/2>NORB:
+    print('NOCC>NORB')
+    sys.exit()
+  if NELEC%2!=0:
+    print('odd number of electrons. use UHF')
+    sys.exit()
+  if NELEC<0:
+    print('NELEC<0')
+    sys.exit()
+  dic=dicmatrix(NORB,twodictionary)
   P=numpy.zeros((NORB,NORB),dtype)
   F_old=numpy.zeros((NORB,NORB),dtype)
   for x in range(int(NELEC/2)):
     P[x,x]=z2
-  H=hmatrix(NORB,dictionary)
-  G=gmatrix(NORB,dictionary,P)
+  H=hmatrix(NORB,onedictionary)
+  c=coulombmatrix(NORB,dic,P)
+  e=exchangematrix(NORB,dic,P)
+  G=c-e
   iters=0
   E_0_old=z0
   E_old=z0
@@ -31,29 +41,28 @@ def main(thresh=numpy.float64(10**-8)):
   F=numpy.add(H,G)
   vals,vecs=eigen(F)
   print (numpy.trace(F),'trace(F)')
-  E=dictionary[-1,-1,-1,-1]
+  E=E_nucc
   for my in range(NORB):
     E=numpy.float64(E)+numpy.float64(P[my,my])*(H[my,my]+z05*G[my,my])
     for ny in range(my):
       E+=z2*P[my,ny]*(H[my,ny]+z05*G[my,ny])
   print (E,'-1iteration') 
-  outsqr('P',P)
-  outsqr('F',F)
-
-  outsqr('G',G)
-  valsm=numpy.zeros((len(vals),len(vals)))
-  for xas in range (len(vals)):
-    valsm[xas,xas]=vals[xas]
-  zero=F*vecs-vecs*valsm
+  #outsqr('P',P)
+  #outsqr('F',F)
+  #outsqr('G',G)
+  #outsqr('c',c)
+  #outsqr('e',e)
 
   while True:
     P=pmatrix(NORB,NELEC,vecs)
-    G=gmatrix(NORB,dictionary,P)
+    c=coulombmatrix(NORB,dic,P)
+    e=exchangematrix(NORB,dic,P)
+    G=c-e
     F=H+G
     vals,vecs=eigen(F)
     E_0=z0
     for my in range(int(NELEC/2)): E_0+=F[my,my]
-    E=dictionary[-1,-1,-1,-1]
+    E=E_nucc
     for my in range(NORB):
       E+=P[my,my]*(z05*F[my,my]+z05*H[my,my])
       for ny in range(my):
@@ -62,17 +71,19 @@ def main(thresh=numpy.float64(10**-8)):
     #outsqr('P',P)
     #outsqr('F',F)
     #outsqr('G',G)
-    #if abs(E_0_old-E_0)<thresh:break
+    if abs(E_0_old-E_0)<thresh:break
     if abs(E_old-E)<10**-8:break
     E_old=E
     iters+=1
     E_0_old=E_0
     F_old=F
     if iters>50: break
-    
+  print('finished')    
 
-def dic():
-  dictionary={}
+def dicfunction():
+  twodictionary={}
+  onedictionary={}
+  E_nucc=0
   with open (sys.argv[1]) as f:
     line=f.readline()
     line=line.strip()
@@ -86,34 +97,53 @@ def dic():
       indizes=[]
       for i in range(1,5):
         indizes.append(int(line.split()[i])-1)
-      dictionary[indizes[0],indizes[1],indizes[2],indizes[3]]=numpy.float64(line.split()[0])
-  return (NORB,NELEC,dictionary)
+      if indizes[0]==indizes[1]==indizes[2]==indizes[3]==-1:
+        E_nucc=numpy.float64(line.split()[0])
+      elif indizes[2]==indizes[3]==-1:
+        onedictionary[indizes[0],indizes[1],indizes[2],indizes[3]]=numpy.float64(line.split()[0])
+      else:
+        twodictionary[indizes[0],indizes[1],indizes[2],indizes[3]]=numpy.float64(line.split()[0])
+  return (NORB,NELEC,E_nucc,onedictionary,twodictionary)
 
-def hmatrix(NORB,dictionary):
+def hmatrix(NORB,onedictionary):
   global dtype
   H=numpy.zeros((NORB,NORB),dtype)
   for my in range (NORB):
     for ny in range (my+1):
-      H[my,ny]=dictionary[my,ny,-1,-1]
+      H[my,ny]=onedictionary[my,ny,-1,-1]
       H[ny,my]=H[my,ny]
   return H
 
-def gmatrix(NORB,dictionary,P):
-  global dtype
-  G=numpy.zeros((NORB,NORB),dtype)
-  for my in range(NORB):
-    for ny in range(my+1):
-      if my==1 and ny==0:pdb.set_trace()
-      G[my,ny]=numpy.float64(0)
-      for si in range(NORB):
-        for la in range(si):
-          G[my,ny]+=numpy.float64(P[la,si])*2*numpy.float64(dictionary[dkey1(my,ny,si,la)])
-          G[my,ny]+=numpy.float64(P[la,si])*numpy.float64(-1)*numpy.float64(dictionary[dkey2(my,ny,si,la)])
-        la=si
-        G[my,ny]+=numpy.float64(P[la,si])*1*numpy.float64(dictionary[dkey1(my,ny,si,la)])
-        G[my,ny]+=numpy.float64(P[la,si])*numpy.float64(-0.5)*numpy.float64(dictionary[dkey2(my,ny,si,la)])
-      G[ny,my]=G[my,ny]
-  return G
+#def gmatrix(NORB,dictionary,P):
+#  global dtype
+#  G=numpy.zeros((NORB,NORB),dtype)
+#  for my in range(NORB):
+#    for ny in range(my+1):
+#      #if my==1 and ny==0:pdb.set_trace()
+#      G[my,ny]=numpy.float64(0)
+#      for si in range(NORB):
+#        for la in range(si):
+#          G[my,ny]+=numpy.float64(P[la,si])*2*numpy.float64(dictionary[dkey1(my,ny,si,la)])
+#          G[my,ny]+=numpy.float64(P[la,si])*numpy.float64(-1)*numpy.float64(dictionary[dkey2(my,ny,si,la)])
+#        la=si
+#        G[my,ny]+=numpy.float64(P[la,si])*1*numpy.float64(dictionary[dkey1(my,ny,si,la)])
+#        G[my,ny]+=numpy.float64(P[la,si])*numpy.float64(-0.5)*numpy.float64(dictionary[dkey2(my,ny,si,la)])
+#      G[ny,my]=G[my,ny]
+#  return G
+
+#def gmatrix(NORB,dictionary,P):
+#  G=numpy.zeros((NORB,NORB))
+#  for my in range(NORB):
+#    for ny in range(my+1):
+#      for si in range(NORB):
+#        G[my,ny]+=P[si,si]*dictionary[dkey1(my,ny,si,si)]
+#        G[my,ny]-=P[si,si]*0.5*dictionary[dkey2(my,si,ny,si)]
+#        for la in range(si):
+#          G[my,ny]+=P[la,si]*2*dictionary[dkey1(my,ny,si,la)]
+#          G[my,ny]-=P[la,si]*dictionary[dkey2(my,si,ny,la)]
+#      G[ny,my]=G[my,ny]
+#  return G
+
 
 def eigen(F):
   vecs=numpy.zeros((len(F),len(F)),dtype)
@@ -131,23 +161,70 @@ def pmatrix(NORB,NELEC,vecs):
         P[ny,my]+=2*vecs[my,a]*vecs[ny,a]
   return P
 
-def dkey1(my,ny,si,la):
-  if my>si or (my==si and ny>=la):
-    return (my,ny,si,la)
-  else:
-    return (si,la,my,ny)
+#def dkey1(my,ny,si,la):
+#  if my>si:
+#    return (my,ny,si,la)
+#  if my==si and ny>=la:
+#    return (my,ny,si,la)
+#  if my==si and ny<la:
+#    return (si,la,my,ny)
+#  if my<si:
+#    return (si,la,my,ny)
+#  sys.exit()
+#
+#def dkey2(my,si,ny,la):
+#  if my>=si:
+#    if ny>=la:
+#      return(my,si,ny,la)
+#    if ny<la:
+#      return(my,si,la,ny)
+#  if my<si:
+#    if ny>=la:
+#      return(si,my,ny,la)
+#    if ny<la:
+#      return(si,my,la,ny)
+#  sys.exit()
 
-def dkey2(my,ny,si,la):
-  if my>=si:
-    if ny>=la:
-      return(my,si,ny,la)
-    else:
-      return(my,si,la,ny)
-  else:
-    if ny>=la:
-      return(si,my,ny,la)
-    else:
-      return(si,my,la,ny)
+def dicmatrix(NORB,dictionary):
+  dic=numpy.zeros((NORB,NORB,NORB,NORB))
+  for key,value in dictionary.items():
+    my=key[0]
+    ny=key[1]
+    la=key[2]
+    si=key[3]
+    dic[my,ny,la,si]=value
+    dic[ny,my,la,si]=value
+    dic[my,ny,si,la]=value
+    dic[ny,my,si,la]=value
+    dic[la,si,my,ny]=value
+    dic[si,la,my,ny]=value
+    dic[la,si,ny,my]=value
+    dic[si,la,ny,my]=value
+  return dic
+
+def coulombmatrix(NORB,dic,P):
+  c=numpy.zeros((NORB,NORB))
+  for my in range (NORB):
+    for ny in range(NORB):
+      for la in range(NORB):
+        for si in range(NORB):
+          c[my,ny]+=P[la,si]*dic[my,ny,la,si]
+  return c
+
+def exchangematrix(NORB,dic,P):
+  e=numpy.zeros((NORB,NORB))
+  for my in range (NORB):
+    for ny in range(NORB):
+      for la in range(NORB):
+        for si in range(NORB):
+          e[my,ny]+=P[la,si]*0.5*dic[my,la,si,ny]
+  return e
+
+
+def electroninp():        #read electronaddinginput
+  print ('How much electrons you want to add?')
+  electronadd=int(input())
+  return electronadd
 
 def matprint(mat, fmt="g"):
   col_maxes = [max([len(("{:"+fmt+"}").format(x)) for x in col]) for col in mat.T]
