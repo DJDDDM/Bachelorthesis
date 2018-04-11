@@ -53,7 +53,7 @@ def main(thresh=numpy.float64(10**-8)):
     Fb=H+C-Eb
     valsa,vecsa=eigen(Fa)
     valsb,vecsb=eigen(Fb)
-    E=energy(NORB,E_nucc,Pt,H,Pa,Fa,Pb,Fb):
+    E=energy(NORB,E_nucc,Pt,H,Pa,Fa,Pb,Fb)
     print ('trace(Fa)',numpy.trace(Fa),'iteration:',iters,'Energy:',E)
     if abs(E_old-E)<10**-8:break
     E_old=E
