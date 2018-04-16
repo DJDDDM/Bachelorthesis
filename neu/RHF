@@ -5,8 +5,7 @@ from decimal import *
 import sys
 import pdb
 
-
-def main(thresh=numpy.float64(10**-8)):
+def main():
   global dtype
   dtype=numpy.dtype(numpy.float64)
   z0=numpy.float64(0)
@@ -43,14 +42,11 @@ def main(thresh=numpy.float64(10**-8)):
     G=c-e
     F=H+G
     vals,vecs=eigen(F)
-    E_0=numpy.trace(F)
     E=energy(NORB,E_nucc,P,H,G)
     print ('trace(F)',numpy.trace(F),'iteration:',iters,'Energy:',E)
-    if abs(E_0_old-E_0)<thresh:break
     if abs(E_old-E)<10**-8:break
     E_old=E
     iters+=1
-    E_0_old=E_0
     if iters>50: break
   print('finished')    
 
