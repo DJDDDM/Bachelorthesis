@@ -22,8 +22,8 @@ def main(thresh=numpy.float64(10**-8)):
     NELECa=int(NELEC/2)
     NELECb=int(NELEC/2)
   else:
-    NELECa=int(NELEC+1/2)
-    NELECb=int(NELEC-1/2)
+    NELECa=int((NELEC+1)/2)
+    NELECb=int((NELEC-1)/2)
   print(NELECa,NELECb,NORB)
   if NELEC>NORB:
     print('NOCC>NORB')
@@ -53,11 +53,12 @@ def main(thresh=numpy.float64(10**-8)):
     valsa,vecsa=eigen(Fa)
     valsb,vecsb=eigen(Fb)
     E=energy(NORB,E_nucc,Pt,H,Pa,Fa,Pb,Fb)
+    outsqr('Pt',Pt)
     print ('trace(Fa)',numpy.trace(Fa),'iteration:',iters,'Energy:',E)
     if abs(E_old-E)<10**-8:break
     E_old=E
     iters+=1
-    if iters>50: break
+    if iters>5: break
   print('finished')    
 
 def dicfunction():

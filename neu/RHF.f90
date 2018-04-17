@@ -2,10 +2,11 @@ MODULE RHF
   implicit NONE
   private
   public dic,terminate,P_init,G_matrix,Energy,RHF_control,F_matrix
-  public twomatrix,P,G,F,H
-  public NORB,NELEC,E,E_nucc,E_old,iters
-      Real, DImension(:,:,:,:),allocatable :: twomatrix
-      Real, Dimension(:,:),allocatable :: H,P,G,F
+  public twomatrix,P,G,F,H,vecs
+  public NORB,NELEC,E,E_nucc,E_old,iters,vals
+  DOUBLE PRECISION, DImension(:,:,:,:),allocatable :: twomatrix
+  DOUBLE PRECISION, Dimension(:,:),allocatable :: H,P,G,F,vecs
+  DOUBLE PRECISION, Dimension(:),allocatable:: vals
       INTEGER:: NORB,NELEC,iters
       REAL:: E,E_old,E_nucc
 
@@ -14,10 +15,10 @@ MODULE RHF
       IMPLICIT NONE
       Integer, PARAMETER:: MAX_size=100
       INTEGER, PARAMETER:: LU=99
-      REAL:: integral,E_nucc
-      INTEGER:: my,ny,la,si,n,index1,index2,ierror
+      DOUBLE PRECISION:: integral
+      INTEGER:: my,ny,la,si,n,index1,index2,ierror,elecadd
       INTEGER:: MS2,ISYM
-      REAL,DIMENSION(MAX_size)::ORBSYM
+      DOUBLE PRECISION,DIMENSION(MAX_size)::ORBSYM
       Character(len=24):: filename
       Character(len=128):: ierrormsg
       NAMELIST/FCI/NORB,NELEC,MS2,ORBSYM,ISYM
@@ -30,18 +31,25 @@ MODULE RHF
       open (Unit=LU, File=filename,Status='old', iostat=ierror)
       errorcheck: IF (ierror>0) THen
         write(*,*) ierror
-        Write (*,1020) filename
-        1020 Format (1X, 'Error')
+        write(*,*) 'fileerror'
       END if errorcheck
+
       READ(UNIT=LU,NML=FCI)
-      allocate(H(norb,norb),P(NORB,NORB),G(NORB,NORB),F(NORB,NORB))
+      Write (*,1001)
+      1001 Format (1x,'HOW MUCH ELECTRONS TO ADD?')
+      Read (*,1011) elecadd 
+      1011 Format (I3)
+      NELEC=NELEC+elecadd
+      write (*,*) 'new NELEC:',NELEC
+      allocate(H(norb,norb),P(NORB,NORB),G(NORB,NORB),F(NORB,NORB),vecs(NORB,NORB))
+      allocate(vals(NORB))
       allocate(twomatrix(norb,norb,norb,norb))
       
       DO
        READ(LU,300,IOSTAT=ierror,IOMSG=ierrormsg) integral, my, ny, la, si
       300 Format (1x,E23.16,4I4)
         If (ierror /= 0) then
-          write(*,*) ierrormsg
+          !write(*,*) ierrormsg
           EXit
         end if
         if (my==0 .and. ny==0 .and. la==0 .and. si==0) then
@@ -77,15 +85,16 @@ deallocate(twomatrix,H,P,G,F)
   Subroutine P_matrix
     Implicit NONE
     integer::my,ny,a
-
+    !write(*,*) vecs
     DO my=1,NORB
       DO ny=1,NORB
         P(my,ny)=0
         DO a=1,int(NELEC/2)
-         P(my,ny)=P(my,ny)+2*C(my,a)*C(ny,a)
+         P(my,ny)=P(my,ny)+2*vecs(my,a)*vecs(ny,a)
         End Do
       End Do
     End Do
+    !write(*,*) P
   End Subroutine P_matrix
 
   Subroutine G_matrix
@@ -108,6 +117,7 @@ deallocate(twomatrix,H,P,G,F)
     Implicit NONE
 
     F=H+G
+    !write(*,*) F
   End Subroutine F_matrix
 
   Subroutine Energy
@@ -122,12 +132,25 @@ deallocate(twomatrix,H,P,G,F)
     END Do
   END Subroutine ENergy
 
+  Subroutine matprint(A)
+    DOUBLE PRECISION,DIMENSION(NORB,NORB)::A
+    INTEGER::i
+    Do i=1,NORB
+      write (*,1500) A(i,1),A(i,2),A(i,3),A(i,4),A(i,5),A(i,6),A(i,7),A(i,8),A(i,9),A(i,10),A(i,11),A(i,12),A(i,13)
+      1500 Format (' ',13ES16.8)
+    End Do
+  End Subroutine matprint
+
 Subroutine RHF_control
+
 IMPLICIT NONE
-integer::iters=1
-real::E_old=0
+integer::iters=1,i
+DOUBLE PRECISION::E_old=0
+INTEGER::INFO
+DOUBLE PRECISION, Dimension(NORB,NORB)::trash
 
 call dic()
+
 
 DO
   if (iters==1) then
@@ -137,16 +160,23 @@ DO
   end if
   call G_matrix
   call F_matrix
-  call diagonal(F)
+  call DSYEV('V','L',NORB,F,NORB,vals,trash,NORB*NORB,INFO)
+  write (*,*) 'INFO',INFO
+  vecs=F
   call Energy
-  write(*,*)'ENERGY:',E,'Iteration:',iters
-  if (E_old==E) then
+  write(*,1234)E,iters
+  1234 Format (' ','ENERGY:',ES16.8,'Iteration:',I3)
+  if ((E_old-E)<(10**(-10))) then
     exit
   end if
   E_old=E
   iters=iters+1
+  if (iters>50) then
+    exit
+  end if
 END DO 
-Call terminate()
+write(*,*) 'DONE'
+!Call terminate()
 end Subroutine RHF_control
 
 END MODULE RHF

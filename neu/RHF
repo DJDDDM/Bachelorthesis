@@ -41,6 +41,7 @@ def main():
     e=exchangematrix(NORB,dic,P)
     G=c-e
     F=H+G
+    outsqr('F',F)
     vals,vecs=eigen(F)
     E=energy(NORB,E_nucc,P,H,G)
     print ('trace(F)',numpy.trace(F),'iteration:',iters,'Energy:',E)
