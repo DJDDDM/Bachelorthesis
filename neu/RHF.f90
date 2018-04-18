@@ -6,9 +6,9 @@ MODULE RHF
   public NORB,NELEC,E,E_nucc,E_old,iters,vals
   DOUBLE PRECISION, DImension(:,:,:,:),allocatable :: twomatrix
   DOUBLE PRECISION, Dimension(:,:),allocatable :: H,P,G,F,vecs
-  DOUBLE PRECISION, Dimension(:),allocatable:: vals
+  DOUBLE PRECISION, Dimension(:),allocatable:: vals,ttt
       INTEGER:: NORB,NELEC,iters
-      REAL:: E,E_old,E_nucc
+      double precision:: E,E_old,E_nucc
 
   CONTAINS
     SUBROUTINE dic()
@@ -27,7 +27,7 @@ MODULE RHF
       !1000 Format (1x,'Enter Filename')
       !Read (*,1010) filename
       !1010 Format (A)
-      filename='FCIDUMP'
+      CALL get_command_argument(1,filename)
       open (Unit=LU, File=filename,Status='old', iostat=ierror)
       errorcheck: IF (ierror>0) THen
         write(*,*) ierror
@@ -40,10 +40,17 @@ MODULE RHF
       Read (*,1011) elecadd 
       1011 Format (I3)
       NELEC=NELEC+elecadd
-      write (*,*) 'new NELEC:',NELEC
-      allocate(H(norb,norb),P(NORB,NORB),G(NORB,NORB),F(NORB,NORB),vecs(NORB,NORB))
+      write (*,*) 'new NELEC:',NELEC,norb
+      allocate(H(norb,norb))
+      allocate(P(NORB,NORB))
+      allocate(G(NORB,NORB))
+      allocate(F(NORB,NORB))
+      allocate(vecs(NORB,NORB))
       allocate(vals(NORB))
       allocate(twomatrix(norb,norb,norb,norb))
+      write(*,*)'haha'
+      allocate(ttt(10))
+      write(*,*)'huhu'
       
       DO
        READ(LU,300,IOSTAT=ierror,IOMSG=ierrormsg) integral, my, ny, la, si
@@ -68,10 +75,11 @@ MODULE RHF
           twomatrix(si,la,ny,my)=integral
         end if
       END DO
+      write(*,*)'hehe'
 
     END Subroutine dic
     subroutine terminate()
-deallocate(twomatrix,H,P,G,F)
+deallocate(twomatrix,H,P,G,F,vecs,vals)
       end subroutine terminate
 
     Subroutine P_init()
@@ -132,25 +140,89 @@ deallocate(twomatrix,H,P,G,F)
     END Do
   END Subroutine ENergy
 
-  Subroutine matprint(A)
+  Subroutine matprint(title,A)
     DOUBLE PRECISION,DIMENSION(NORB,NORB)::A
     INTEGER::i
+    CHARACTER::title
+    write(*,*)title
     Do i=1,NORB
       write (*,1500) A(i,1),A(i,2),A(i,3),A(i,4),A(i,5),A(i,6),A(i,7),A(i,8),A(i,9),A(i,10),A(i,11),A(i,12),A(i,13)
-      1500 Format (' ',13ES16.8)
+      1500 Format (' ',13F12.8)
     End Do
   End Subroutine matprint
+
+  Subroutine fcimaker
+    IMPLICIT NONE
+    INTEGER::I,J,K,L,my,ny,la,si
+    DOUBLE PRECISION:: integral
+    INTEGER,DIMENSION(NORB)::ORBSYM
+    INTEGER::ierror,fcidumpnew,MS2=0,ISYM=0
+    CHARACTER(len=10)::filename
+    CHARACTER(len=124)::imsg
+    NAMELIST/FCI/NORB,NELEC,MS2,ORBSYM,ISYM
+    CALL get_command_argument(2,filename)
+    ORBSYM=1
+    fcidumpnew=25
+    OPEN(UNIT=fcidumpnew, FILE=filename, STATUS='REPLACE', ACTION='WRITE', IOSTAT=ierror)
+    WRITE(UNIT=fcidumpnew,NML=FCI)
+    DO I=1,NORB
+      Do J=1,I
+        Do K=1,I
+         Do L=1,K
+          integral=0
+          DO my=1,NORB
+            DO ny=1,NORB
+              Do la=1,NORB
+                Do si=1,NORB
+                  integral=integral+vecs(my,I)*vecs(ny,J)*vecs(la,K)*vecs(si,L)*twomatrix(my,ny,la,si)
+                END DO
+              END DO
+            END DO
+          END DO
+          WRITE(fcidumpnew,300,IOSTAT=ierror) integral, I, J, K, L
+          300 Format (1x,E23.16,4I4)
+        END DO
+      END DO
+    END DO
+  END DO
+  K=0
+  L=0
+  DO I=1,NORB
+    DO J=1,I
+      integral=0
+      DO my=1,NORB
+        DO ny=1,NORB
+          integral=integral+vecs(my,I)*vecs(ny,J)*H(my,ny)
+        END DO
+      END DO
+    WRITE(fcidumpnew,300,IOSTAT=ierror) integral, I, J, K, L
+    if (ierror/=0) then
+      write (*,*) imsg
+    end if
+    !300 Format (1x,E23.16,4I4)
+    END DO
+  END DO
+  I=0
+  J=0
+  integral=E_nucc
+  WRITE(fcidumpnew,300,IOSTAT=ierror,IOMSG=imsg) integral, I, J, K, L
+  !300 Format (1x,E23.16,4I4)
+END SUbroutine fcimaker
 
 Subroutine RHF_control
 
 IMPLICIT NONE
-integer::iters=1,i
+integer::iters=1,i,j
 DOUBLE PRECISION::E_old=0
 INTEGER::INFO
-DOUBLE PRECISION, Dimension(NORB,NORB)::trash
+DOUBLE PRECISION, Dimension(:),allocatable::trash
+integer :: lwork
+integer :: lwork_max
+double precision, parameter :: thresh=1d-10
 
+allocate(trash(NORB**4))
 call dic()
-
+lwork_max=3*norb
 
 DO
   if (iters==1) then
@@ -160,13 +232,33 @@ DO
   end if
   call G_matrix
   call F_matrix
-  call DSYEV('V','L',NORB,F,NORB,vals,trash,NORB*NORB,INFO)
-  write (*,*) 'INFO',INFO
-  vecs=F
   call Energy
-  write(*,1234)E,iters
-  1234 Format (' ','ENERGY:',ES16.8,'Iteration:',I3)
-  if ((E_old-E)<(10**(-10))) then
+!  if (iters==1) then 
+    write(*,*)'norb',norb
+    call DSYEV('V','L',norb,F,NORB,vals,trash,-1,INFO)
+    lwork=min(lwork_max,int(trash(1)))
+    write(*,*)'lwork',lwork
+!  end if
+!  call DSYEV('V','L',NORB,F,NORB,vals,trash,lwork,INFO)
+  !deallocate(F)
+  !write(*,*)1
+  !deallocate(vecs)
+  !write(*,*)2
+do i=1,norb
+ do j=1,norb
+ !write(*,*)i,j
+  vecs(i,j)=F(i,j)
+!write(*,*)'jjj',i,j
+ end do
+end do
+write(*,*)'after'
+write(*,*)E
+write(*,*)iters
+  
+  write(*,12)E,iters
+  12 Format (' ','ENERGY:',F10.4,'Iteration:',I3)
+  write(*,*)'test',E,iters
+  if (abs(E_old-E)<(thresh)) then
     exit
   end if
   E_old=E
@@ -174,9 +266,16 @@ DO
   if (iters>50) then
     exit
   end if
-END DO 
-write(*,*) 'DONE'
-!Call terminate()
+END DO
+write(*,*)-1
+deallocate(ttt)
+
+write(*,*)0
+deallocate(trash)
+write(*,*) 1
+Call terminate()
+write(*,*) 'DONE Calculating'
+Call fcimaker
 end Subroutine RHF_control
 
 END MODULE RHF
