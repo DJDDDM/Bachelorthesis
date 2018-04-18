@@ -8,7 +8,7 @@ MODULE UHF
   DOUBLE PRECISION, Dimension(:,:),allocatable :: H,Pa,Pb,Pt,Ga,Gb,Gt,Fa,Fb,vecsa,vecsb
   DOUBLE PRECISION, Dimension(:),allocatable:: valsa,valsb
       INTEGER:: NORB,NELEC,iters,NELECa,NELECb
-      REAL:: E,E_old,E_nucc
+      DOUBLE PRECISION:: E,E_old,E_nucc
 
   CONTAINS
     SUBROUTINE init
@@ -100,7 +100,7 @@ MODULE UHF
     DO my=1,NORB
       DO ny=1,NORB
         Pa(my,ny)=0
-        DO a=1,int(NELEC/2)
+        DO a=1,NELECa
          Pa(my,ny)=Pa(my,ny)+vecsa(my,a)*vecsa(ny,a)
         End Do
       End Do
@@ -113,7 +113,7 @@ MODULE UHF
     DO my=1,NORB
       DO ny=1,NORB
         Pb(my,ny)=0
-        DO a=1,int(NELEC/2)
+        DO a=1,NELECb
          Pb(my,ny)=Pb(my,ny)+vecsb(my,a)*vecsb(ny,a)
         End Do
       End Do
@@ -202,15 +202,141 @@ MODULE UHF
     End Do
   End Subroutine matprint
 
+  Subroutine fcimaker
+    IMPLICIT NONE
+    INTEGER::I,J,K,L,my,ny,la,si
+    DOUBLE PRECISION:: integral
+    INTEGER,DIMENSION(NORB)::ORBSYM
+    INTEGER::ierror,fcidumpnew,MS2=0,ISYM=0
+    CHARACTER(len=10)::filename
+    CHARACTER(len=124)::imsg
+    NAMELIST/FCI/NORB,NELEC,MS2,ORBSYM,ISYM
+    CALL get_command_argument(2,filename)
+    ORBSYM=1
+    fcidumpnew=25
+    OPEN(UNIT=fcidumpnew, FILE=filename, STATUS='REPLACE', ACTION='WRITE', IOSTAT=ierror)
+    WRITE(UNIT=fcidumpnew,NML=FCI)
+    !alpha-alpha
+    DO I=1,NORB
+      Do J=1,I
+        Do K=1,I
+         Do L=1,K
+          if (K==I .and. L>J) then
+            CYCLE
+          end if
+          integral=0
+          DO my=1,NORB
+            DO ny=1,NORB
+              Do la=1,NORB
+                Do si=1,NORB
+                  integral=integral+vecsa(my,I)*vecsa(ny,J)*vecsa(la,K)*vecsa(si,L)*twomatrix(my,ny,la,si)
+                END DO
+              END DO
+            END DO
+          END DO
+          WRITE(fcidumpnew,300,IOSTAT=ierror) integral, I, J, K, L
+          300 Format (1x,E23.16,4I4)
+        END DO
+      END DO
+    END DO
+  END DO
+  !beta-beta
+  DO I=1,NORB
+    DO J=1,I
+      DO K=1,I
+        DO L=1,K
+          if (K==I .and. L>J) then
+            CYCLE
+          end if
+          integral=0
+          DO my=1,NORB
+            DO ny=1,NORB
+              DO la=1,NORB
+                DO si=1,NORB
+                  integral=integral+vecsb(my,I)*vecsb(ny,J)*vecsb(la,K)*vecsb(si,L)*twomatrix(my,ny,la,si)
+                END DO
+              END DO
+            END DO
+          END DO
+          WRITE(fcidumpnew,300,IOSTAT=ierror) integral, I+NELECa, J+NELECa, K+NELECa, L+NELECa
+        END DO
+      END DO
+    END DO
+  END DO
+  !alpha-beta
+  DO I=1,NORB
+    DO J=1,I
+      DO K=1,I
+        DO L=1,K
+          if (K==I .and. L>J) then
+            CYCLE
+          end if
+          integral=0
+          DO my=1,NORB
+            DO ny=1,NORB
+              DO la=1,NORB
+                DO si=1,NORB
+                  integral=integral+vecsa(my,I)*vecsa(ny,J)*vecsb(la,K)*vecsb(si,L)*twomatrix(my,ny,la,si)
+                END DO
+              END DO
+            END DO
+          END DO
+          WRITE(fcidumpnew,300,IOSTAT=ierror) integral, I+NELECa+NELECb, J+NELECa+NELECb, K+NELECa+NELECb, L+NELECa+NELECb
+        END DO
+      END DO
+    END DO
+  END DO
+  K=0
+  L=0
+  !alpa-alpha
+  DO I=1,NORB
+    DO J=1,I
+      integral=0
+      DO my=1,NORB
+        DO ny=1,NORB
+          integral=integral+vecsa(my,I)*vecsa(ny,J)*H(my,ny)
+        END DO
+      END DO
+    WRITE(fcidumpnew,300,IOSTAT=ierror) integral, I, J, K, L
+    END DO
+  END DO
+  !beta-beta
+  DO I=1,NORB
+    DO J=1,I
+      integral=0
+      DO my=1,NORB
+        DO ny=1,NORB
+          integral=integral+vecsb(my,I)*vecsb(ny,J)*H(my,ny)
+        END DO
+      END DO
+    WRITE(fcidumpnew,300,IOSTAT=ierror) integral, I+NELECa, J+NELECa, K+NELECa, L+NELECa
+    END DO
+  END DO
+  I=0
+  J=0
+  integral=E_nucc
+  WRITE(fcidumpnew,300,IOSTAT=ierror,IOMSG=imsg) integral, I, J, K, L
+  !300 Format (1x,E23.16,4I4)
+END SUbroutine fcimaker
+
+Subroutine terminate
+  Deallocate(Ga,Gb,Gt,Pa,Pb,Pt,H,twomatrix,Fa,Fb,vecsa,vecsb)
+END SUBroutine terminate
+
 Subroutine UHF_control
 
 IMPLICIT NONE
 integer::iters=1,i
 DOUBLE PRECISION::E_old=0
 INTEGER::INFO
-DOUBLE PRECISION, Dimension(NORB,NORB)::trash,Fa_store,Fb_store
+Double Precision, Parameter:: tresh=1d-10
+DOUBLE PRECISION, Dimension(:),allocatable::work
+integer :: lwork,lwork_max
 
 call init()
+lwork_max=norb**2
+allocate(work(lwork_max))
+lwork=NORB**2
 
 
 DO
@@ -225,19 +351,14 @@ DO
   call G_matrixb
   call G_matrixt
   call F_matrix
-  !Fa_store=Fa
-  !Fb_store=Fb
   call Energy
-  call matprint('Pt',Pt)
-  call DSYEV('V','L',NORB,Fa,NORB,valsa,trash,NORB*NORB,INFO)
+  call DSYEV('V','L',NORB,Fa,NORB,valsa,work,lwork,INFO)
   vecsa=Fa
-  call DSYEV('V','L',NORB,Fb,NORB,valsb,trash,NORB*NORB,INFO)
+  call DSYEV('V','L',NORB,Fb,NORB,valsb,work,lwork,INFO)
   vecsb=Fb
-  !Fa=Fa_store
-  !Fb=Fb_store
   write(*,1234)E,iters
-  1234 Format (' ','ENERGY:',ES29.20,'Iteration:',I3)
-  if (abs(E_old-E)<0.00000001) then
+  1234 Format (' ','ENERGY:',F29.10,'Iteration:',I3)
+  if (abs(E_old-E)<tresh) then
     write(*,*) 'converged'
     exit
   end if
@@ -248,7 +369,9 @@ DO
   end if
 END DO 
 write(*,*) 'DONE'
-!Call terminate()
+Call fcimaker
+deallocate(work)
+Call terminate()
 end Subroutine UHF_control
 
 END MODULE UHF

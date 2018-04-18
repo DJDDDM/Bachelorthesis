@@ -1,21 +1,23 @@
 MODULE RHF
   implicit NONE
   private
-  public dic,terminate,P_init,G_matrix,Energy,RHF_control,F_matrix
-  public twomatrix,P,G,F,H,vecs
-  public NORB,NELEC,E,E_nucc,E_old,iters,vals
-  DOUBLE PRECISION, DImension(:,:,:,:),allocatable :: twomatrix
-  DOUBLE PRECISION, Dimension(:,:),allocatable :: H,P,G,F,vecs
-  DOUBLE PRECISION, Dimension(:),allocatable:: vals,ttt
-      INTEGER:: NORB,NELEC,iters
-      double precision:: E,E_old,E_nucc
+  public init,terminate,P_init,G_matrix,Energy,RHF_control,F_matrix
+  public P,G,F,vecs
+  public E,E_old,iters,vals
+  DOUBLE PRECISION, Dimension(:,:),allocatable :: P,G,F,vecs
+  DOUBLE PRECISION, Dimension(:),allocatable:: vals
+      DOUBLE PRECISION,public,allocatable,DImension(:,:,:,:):: twomatrix
+      DOUBLE PRECISION,public,allocatable,Dimension(:,:):: H
+      DOUBLE PRECISION,public::E_nucc
+      INTEGER:: iters
+      double precision:: E,E_old
+      INTEGER,PUBLIC::NORB,NELEC
 
   CONTAINS
-    SUBROUTINE dic()
+    SUBROUTINE init
       IMPLICIT NONE
       Integer, PARAMETER:: MAX_size=100
       INTEGER, PARAMETER:: LU=99
-      DOUBLE PRECISION:: integral
       INTEGER:: my,ny,la,si,n,index1,index2,ierror,elecadd
       INTEGER:: MS2,ISYM
       DOUBLE PRECISION,DIMENSION(MAX_size)::ORBSYM
@@ -23,10 +25,6 @@ MODULE RHF
       Character(len=128):: ierrormsg
       NAMELIST/FCI/NORB,NELEC,MS2,ORBSYM,ISYM
       
-      !Write (*,1000)
-      !1000 Format (1x,'Enter Filename')
-      !Read (*,1010) filename
-      !1010 Format (A)
       CALL get_command_argument(1,filename)
       open (Unit=LU, File=filename,Status='old', iostat=ierror)
       errorcheck: IF (ierror>0) THen
@@ -41,22 +39,33 @@ MODULE RHF
       1011 Format (I3)
       NELEC=NELEC+elecadd
       write (*,*) 'new NELEC:',NELEC,norb
-      allocate(H(norb,norb))
       allocate(P(NORB,NORB))
       allocate(G(NORB,NORB))
       allocate(F(NORB,NORB))
       allocate(vecs(NORB,NORB))
       allocate(vals(NORB))
-      allocate(twomatrix(norb,norb,norb,norb))
-      write(*,*)'haha'
-      allocate(ttt(10))
-      write(*,*)'huhu'
-      
+      ALLOCATE (twomatrix(NORB,NORB,NORB,NORB),H(NORB,NORB))
+      call read_integral
+    END SUBROUTINE init 
+
+  Subroutine read_integral
+      INTEGER:: NORB_store, NELEC_store, MS2, ISYM, ierror
+      INTEGER, PARAMETER :: MAX_size=100,LU=99
+      INTEGER:: my,ny,la,si
+      DOUBLE PRECISION:: integral
+      Character(len=128):: ierrormsg
+      DOUBLE PRECISION,DImension(MAX_Size)::ORBSYM
+      Character(len=24):: filename
+      NAMELIST/FCI/NORB,NELEC,MS2,ORBSYM,ISYM
+      CALL get_command_argument(1,filename)
+      NORB_store=NORB
+      NELEC_store=NELEC
+      !open (Unit=LU, File=filename,Status='old', iostat=ierror)
+      !READ(UNIT=LU,NML=FCI)
       DO
        READ(LU,300,IOSTAT=ierror,IOMSG=ierrormsg) integral, my, ny, la, si
       300 Format (1x,E23.16,4I4)
         If (ierror /= 0) then
-          !write(*,*) ierrormsg
           EXit
         end if
         if (my==0 .and. ny==0 .and. la==0 .and. si==0) then
@@ -75,11 +84,13 @@ MODULE RHF
           twomatrix(si,la,ny,my)=integral
         end if
       END DO
-      write(*,*)'hehe'
+    NORB=NORB_store
+    NELEC=NELEC_store
+    END Subroutine read_integral
 
-    END Subroutine dic
-    subroutine terminate()
-deallocate(twomatrix,H,P,G,F,vecs,vals)
+    subroutine terminate
+      INTEGER::deallo_status
+deallocate(twomatrix,H,P,G,F,vecs,vals,STAT=deallo_Status)
       end subroutine terminate
 
     Subroutine P_init()
@@ -122,10 +133,7 @@ deallocate(twomatrix,H,P,G,F,vecs,vals)
   END Subroutine G_matrix
 
   Subroutine F_matrix
-    Implicit NONE
-
     F=H+G
-    !write(*,*) F
   End Subroutine F_matrix
 
   Subroutine Energy
@@ -215,14 +223,15 @@ IMPLICIT NONE
 integer::iters=1,i,j
 DOUBLE PRECISION::E_old=0
 INTEGER::INFO
-DOUBLE PRECISION, Dimension(:),allocatable::trash
-integer :: lwork
-integer :: lwork_max
+DOUBLE PRECISION, Dimension(:),allocatable::work
+integer :: lwork,lwork_max,deallo_STATUS
 double precision, parameter :: thresh=1d-10
+CHARACTER(len=124)::ERRalloc
 
-allocate(trash(NORB**4))
-call dic()
-lwork_max=3*norb
+call INIT
+lwork_max=norb**2
+allocate(work(lwork_max))
+lwork=NORB**2
 
 DO
   if (iters==1) then
@@ -233,31 +242,14 @@ DO
   call G_matrix
   call F_matrix
   call Energy
-!  if (iters==1) then 
-    write(*,*)'norb',norb
-    call DSYEV('V','L',norb,F,NORB,vals,trash,-1,INFO)
-    lwork=min(lwork_max,int(trash(1)))
-    write(*,*)'lwork',lwork
-!  end if
-!  call DSYEV('V','L',NORB,F,NORB,vals,trash,lwork,INFO)
-  !deallocate(F)
-  !write(*,*)1
-  !deallocate(vecs)
-  !write(*,*)2
+  call DSYEV('V','L',NORB,F,NORB,vals,work,lwork,INFO)
 do i=1,norb
  do j=1,norb
- !write(*,*)i,j
   vecs(i,j)=F(i,j)
-!write(*,*)'jjj',i,j
  end do
 end do
-write(*,*)'after'
-write(*,*)E
-write(*,*)iters
-  
-  write(*,12)E,iters
-  12 Format (' ','ENERGY:',F10.4,'Iteration:',I3)
-  write(*,*)'test',E,iters
+  write(*,1100)E,iters
+  1100 Format (' ','ENERGY:',F10.4,'Iteration:',I3)
   if (abs(E_old-E)<(thresh)) then
     exit
   end if
@@ -267,15 +259,12 @@ write(*,*)iters
     exit
   end if
 END DO
-write(*,*)-1
-deallocate(ttt)
-
-write(*,*)0
-deallocate(trash)
-write(*,*) 1
-Call terminate()
 write(*,*) 'DONE Calculating'
 Call fcimaker
+write(*,*) "DONE FCIMAKER"
+deallocate(work,stat=deallo_Status,ERRMSG=ERRalloc)
+Call terminate
+write(*,*)'deallocated'
 end Subroutine RHF_control
 
 END MODULE RHF
