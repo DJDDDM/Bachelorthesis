@@ -12,110 +12,114 @@ def main():
   global NELECd
   global NELECs
   global NELECe
+  global H
   dtype=numpy.dtype(numpy.float64)
   z0=numpy.float64(0)
   z05=numpy.float64(0.5)
   z2=numpy.float64(2)
   NORB,NELEC,E_nucc,onedictionary,twodictionary=dicfunction()
-  NELEC+=electroninp()
+  #NELEC+=electroninp()
   iters=1
   E_0_old=z0
   E_old=z0
+  old_ener=0
   dic=dicmatrix(NORB,twodictionary)
   H=hmatrix(NORB,onedictionary)
 
-  print(NELEC,NORB)
-  if NELEC/2>NORB:
-    print('NOCC>NORB')
-    sys.exit()
-  if NELEC%2!=0:
-    print('odd number of electrons. use UHF')
-    sys.exit()
-  if NELEC<0:
-    print('NELEC<0')
-    sys.exit()
+  #print(NELEC,NORB)
+  #if NELEC/2>NORB:
+  #  print('NOCC>NORB')
+  #  sys.exit()
+  #if NELEC%2!=0:
+  #  print('odd number of electrons. use UHF')
+  #  sys.exit()
+  #if NELEC<0:
+  #  print('NELEC<0')
+  #  sys.exit()
 
-  NELECd=4
-  NELECs=1
+  NELECd=3
+  NELECs=0
   NELECe=NORB-NELECd-NELECs
-  print(NELECd,NELECs,NELECe,NORB)
+  print(NELEC,NELECd,NELECs,NELECe,NORB)
+
+
 
   while True:
     if iters==1:
-      D=numpy.zeros((NORB,NELECd))
-      for j in range (NELECd):
-        D[j,j]=1
-      S=numpy.zeros((NORB,NELECs))
-      for k in range (NELECs):
-        S[k,k]=1
-      E=numpy.zeros((NORB,NELECe))
-      Pd=pmatrix(NORB,NELECd,D)
-      Ps=pmatrix(NORB,NELECs,S)
+      #DSE=DSEinitial(NELEC)
+      DSE=numpy.identity(NORB)
+      outsqr('DSE',DSE)
+      D=DSE[:,:NELECd]
+      S=DSE[:,NELECd:NELECd+NELECs]
+      E=DSE[:,NELECd+NELECs:NELECd+NELECs+NELECe]
       DE=numpy.zeros((NORB,NELECd+NELECe))
       DS=numpy.zeros((NORB,NELECd+NELECs))
       SE=numpy.zeros((NORB,NELECs+NELECe))
-
+      Fse=numpy.zeros((NORB,NORB))
+      Fde=numpy.zeros((NORB,NORB))
+      Pd=numpy.zeros((NORB,NORB))
+      Ps=numpy.zeros((NORB,NORB))
+      for a in range (NELECd):
+        Pd[a,a]=2
+      for b in range (NELECs):
+        Ps[b,b]=1
+    
+    Fde=H+coulombmatrix(Pd+Ps)-0.5*exchangematrix(Pd+Ps)
     for j in range (NELECd):
       DE[:,j]=D[:,j]
     for m in range (NELECe):
       DE[:,m+NELECd]=E[:,m]
-    valsDE,vecsDE=eigen(numpy.matmul(numpy.matmul(DE,Fde),DE.transpose()))
-    vecsDE=vecsDE.transpose()
-    DE=numpy.matmul(numpy.matmul(DE,vecsDE),DE.transpose())
+    FdeMO=numpy.matmul(numpy.matmul(DE.transpose(),Fde),DE)
+    valsDE,vecsDE=eigen(FdeMO)
+    DE=numpy.matmul(DE,vecsDE)
     for j in range (NELECd):
       D[:,j]=DE[:,j]
     for m in range (NELECe):
       E[:,m]=DE[:,m+NELECd]
-    Pd=pmatrix(NORB,NELECd,D)
-    outsqr('DE',DE)
-
-    sys.exit()
-
-    Fse=H+coulombmatrix(2*Pd+Ps)-exchangematrix(Pd+Ps)
+    ener=energy(NORB,E_nucc,H,Pd,Ps,Fde,Fse)
+    print('ENERGY:',ener,'ITERATION:',iters)
+    Pd=2*numpy.matmul(DE[:,:NELECd],numpy.transpose(DE[:,:NELECd]))
+    #outsqr('DE',DE)
+    #outsqr('P',Pd)
+    
+    Fse=H+coulombmatrix(Pd+Ps)-exchangematrix(0.5*Pd+Ps)
     for j in range (NELECs):
       SE[:,j]=S[:,j]
     for m in range (NELECe):
       SE[:,m+NELECs]=E[:,m]
-    valsSE,vecsSE=eigen(numpy.matmul(numpy.matmul(SE.transpose(),Fse),SE))
-    vecsSE=vecsSE.transpose()
-    SE=numpy.matmul(numpy.matmul(SE,vecsSE),SE.transpose())
+    FseMO=numpy.matmul(numpy.matmul(SE.transpose(),Fse),SE)
+    valsSE,vecsSE=eigen(FseMO)
+    SE=numpy.matmul(SE,vecsSE)
     for j in range (NELECs):
       S[:,j]=SE[:,j]
     for m in range (NELECe):
       E[:,m]=SE[:,m+NELECs]
-    Ps=pmatrix(NORB,NELECs,S)
+    Ps=numpy.matmul(SE[:,:NELECs],numpy.transpose(SE[:,:NELECs]))
 
-    Fds=H+coulombmatrix(2*Pd+Ps)-exchangematrix(Pd)
+    Fds=H+coulombmatrix(Pd+Ps)-exchangematrix(0.5*Pd)
     for j in range (NELECd):
       DS[:,j]=D[:,j]
     for m in range (NELECs):
       DS[:,m+NELECd]=S[:,m]
-    outsqr('vecsDE',vecsDE)
-    outsqr('SE',SE)
-    outsqr('S',S)
-    outsqr('D',D)
-    outsqr('DS',DS)
-    valsDS,vecsDS=eigen(numpy.matmul(numpy.matmul(DS.transpose(),Fds),DS))
-    vecsDS=vecsDS.transpose()
-    DS=numpy.matmul(numpy.matmul(DS,vecsDS),DS.transpose())
+    FdsMO=numpy.matmul(numpy.matmul(DS.transpose(),Fds),DS)
+    valsDS,vecsDS=eigen(FdsMO)
+    DS=numpy.matmul(DS,vecsDS)
     for j in range (NELECd):
       D[:,j]=DS[:,j]
     for m in range (NELECs):
       S[:,m]=DS[:,m+NELECd]
-    Ps=pmatrix(NORB,NELECs,S)
-    Ps=pmatrix(NORB,NELECs,D)
+    Pd=2*numpy.matmul(DS[:,:NELECd],numpy.transpose(DS[:,:NELECd]))
+    Ps=numpy.matmul(DS[:,NELECd:NELECd+NELECs],numpy.transpose(DS[:,NELECd:NELECd+NELECs]))
 
-    #outsqr('S',S)
-    #outsqr('Ps',Ps)
-    #outsqr('vecsDS',vecsDS)
-    #outsqr('DS',DS)
-    #outsqr('D',D)
-    #outsqr('Pd',Pd)
-
+    #outsqr('P',Pd)
+    #outsqr('F',Fde)
+    #outsqr('H',H)
     ener=energy(NORB,E_nucc,H,Pd,Ps,Fde,Fse)
     print('ENERGY:',ener,'ITERATION:',iters)
+    #if abs(old_ener-ener)<10**-5:break
     iters+=1
-    if iters>3:
+    old_ener=ener
+    if iters>10:
       break
   print('finished')    
   #fcimaker(NORB,vecs,dic)
@@ -163,10 +167,19 @@ def eigen(F):
 
 def pmatrix(NORB,NELEC,vecs):
   P=numpy.zeros((NORB,NORB))
-  for my in range (NORB):
-    for ny in range (NORB):
-      for a in range (NELEC):
-        P[ny,my]+=vecs[my,a]*vecs[ny,a]
+  if NELEC==NELECd:
+    for my in range (NORB):
+      for ny in range (NORB):
+        for a in range (NELEC):
+          P[ny,my]+=2*vecs[my,a]*vecs[ny,a]
+  elif NELEC==NELECs:
+    for my in range (NORB):
+      for ny in range (NORB):
+        for a in range (NELEC):
+          P[ny,my]+=vecs[my,a]*vecs[ny,a]
+  else:
+    print ('error')
+    sys.exit()
   return P
 
 def dicmatrix(NORB,dictionary):
@@ -210,6 +223,18 @@ def energy(NORB,E_nucc,H,Pd,Ps,Fde,Fse):
     for ny in range(NORB):
       E+=0.5*(Pd[my,ny]*(H[my,ny]+Fde[my,ny])+Ps[my,ny]*(H[my,ny]+Fse[my,ny]))
   return E
+
+def DSEinitial(NELEC):
+  DSE=numpy.identity(NORB)
+  P=numpy.zeros((NORB,NORB))
+  for a in range(int(NELEC/2)):
+    P[a,a]=2
+  F=H+coulombmatrix(P)-0.5*exchangematrix(P)
+  vecs=numpy.zeros((NORB,NORB))
+  vals,vecs=numpy.linalg.eig(F)
+  idx=vals.argsort()
+  DSE=DSE[:,idx]
+  return DSE 
 
 def electroninp():        #read electronaddinginput
   #print ('How much electrons you want to add?')
