@@ -34,10 +34,19 @@ def main():
         Ga=numpy.tensordot(Pa,twomatrix,((0,1),(1,2)))
         Gb=numpy.tensordot(Pb,twomatrix,((0,1),(1,2)))
         Gt=numpy.tensordot(Pt,twomatrix,((0,1),(3,2)))
+        ME=(Ga-Gb)/2
     
         #G->F
         Fa=numpy.subtract(numpy.add(H,Gt),Ga)
         Fb=numpy.subtract(numpy.add(H,Gt),Gb)
+
+        #F_UHF -> F_CUHF
+        Dela=Fa+ME
+        Delb=Fb-ME
+        Fa[:NELECb,NELECa:]=Dela[:NELECb,NELECa:]
+        Fa[NELECa:,:NELECb]=Dela[NELECa:,:NELECb]
+        Fb[:NELECb,NELECa:]=Delb[:NELECb,NELECa:]
+        Fb[NELECa:,:NELECb]=Delb[NELECa:,:NELECb]
     
         #F->C
         valsa, Ca = numpy.linalg.eig(Fa)
@@ -51,7 +60,14 @@ def main():
         Cb=Cb[:,idx]
     
         #energy
-        E=0.5*(numpy.tensordot(Pt,H,((0,1),(1,0)))+numpy.tensordot(Pa,Fa,((0,1),(1,0)))+numpy.tensordot(Pb,Fb,((0,1),(1,0))))+E_nucc
+        DelE=0
+        for i in range (NELECb):
+            for j in range (NELECa,NORB):
+                DelE+=ME[i,j]*(Pa[i,j]-Pb[i,j])
+                DelE+=ME[j,i]*(Pa[j,i]-Pb[j,i])
+        UHFE=numpy.tensordot(Pt,H,((0,1),(0,1)))+0.5*numpy.tensordot((Gt-0.5*(Ga+Gb)),Pt,((0,1),(0,1)))-0.5*numpy.tensordot(ME,(Pa-Pb),((0,1),(0,1)))
+        #E=0.5*(numpy.tensordot(Pt,H,((0,1),(1,0)))+numpy.tensordot(Pa,Fa,((0,1),(1,0)))+numpy.tensordot(Pb,Fb,((0,1),(1,0))))+E_nucc+DelE
+        E=UHFE+DelE+E_nucc
 
         #C->P
         Pa=numpy.matmul(Ca[:,:NELECa],numpy.transpose(Ca[:,:NELECa]))
@@ -59,9 +75,9 @@ def main():
         Pt=numpy.add(Pa,Pb)
     
         #loopcontrol
-        print('iters',iters,'Energy',E)
+        print('iters',iters,'Energy',E, 'DelE=',DelE)
         if abs(E-E_old)<10**-7: break
-        if iters > 1000:
+        if iters > 50:
             print('not converged after', iters ,'iterations')
             break
         E_old=E

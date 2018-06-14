@@ -5,6 +5,7 @@ from decimal import *
 import sys
 import pdb
 import f90nml
+import os
 
 def main():
   global dtype
@@ -97,71 +98,74 @@ def main():
     Pd=numpy.multiply(2,numpy.matmul(DS[:,:NELECd],numpy.transpose(DS[:,:NELECd])))
     Ps=numpy.matmul(DS[:,NELECd:NELECd+NELECs],numpy.transpose(DS[:,NELECd:NELECd+NELECs]))
 
-    if abs(old_ener-ener)<10**-6:break
+    if abs(old_ener-ener)<10**-7:break
     iters+=1
     old_ener=ener
-    if iters>50:
+    if iters>1000:
       print('not converged')
       break
   DSE[:,:NELECd]=D
   DSE[:,NELECd:NELECd+NELECs]=S
   DSE[:,NELECd+NELECs:]=E
   print('finished calculating')    
-  fcimaker(NORB, DSE, dic, H, nml)
+  #fcimaker(NORB, DSE, dic, H, nml)
+  print('skipped newFCIDUMP')
 
 def init():
     print('in init')
-    twodictionary = {}
-    onedictionary = {}
-    with open(sys.argv[1]) as f:
-        print('file opened')
-        nml = f90nml.read(f)
-        NORB = nml['fci']['NORB']
-        NELEC = nml['fci']['NELEC']
-        print('NORB=',NORB)
-        print('read the namelist')
-    f.close()
-    with open(sys.argv[1]) as f:
-        number=2
+    with open(sys.argv[1],'r') as f:
+        with open('tmpnml.tmp','w')as g:
+            number=2
+            #find and copy nml
+            while True:
+                number += 1
+                print(number)
+                line = f.readline()
+                g.write(line)
+                print(line)
+                if line.find('&END') != -1:
+                    print('found the Namelist')
+                    break
+                if line.find(r'/') != -1:
+                    print('found the Namelist')
+                    break
+
+        with open('tmpnml.tmp') as g:
+            #read the nml
+            nml = f90nml.read(g)
+            NORB = nml['fci']['NORB']
+            NELEC = nml['fci']['NELEC']
+            print('NORB=',NORB)
+            print('read the namelist')
+        os.remove('tmpnml.tmp')
+
+
+        H = numpy.zeros((NORB, NORB))
+        twomatrix = numpy.zeros((NORB, NORB, NORB, NORB))
         while True:
-            line = f.readline()
-            number+=1
-            if r'/' or '&END' is line:
-                print('found the Namelist')
-                break
-        for line in f.readlines()[number:]:
-            indizes = []
-            for i in range(1, 5):
-                indizes.append(int(line.split()[i]) - 1)
-            if indizes[0] == indizes[1] == indizes[2] == indizes[3] == - 1:
-                E_nucc = numpy.float64(line.split()[0])
-            if indizes[2] == indizes[3] == - 1 and indizes[0] != -1 and indizes[1] !=-1:
-                onedictionary[indizes[0], indizes[1], indizes[2], indizes[3]]\
-                    = numpy.float64(line.split()[0])
-            elif indizes[0]!=-1 and indizes[1]!=-1 and indizes[2]!=-1 and indizes[3]!=-1 :
-                twodictionary[indizes[0], indizes[1], indizes[2], indizes[3]]\
-                    = numpy.float64(line.split()[0])
-    #twomatrix
-    twomatrix = numpy.zeros((NORB, NORB, NORB, NORB))
-    for key, value in twodictionary.items():
-        my = key[0]
-        ny = key[1]
-        la = key[2]
-        si = key[3]
-        twomatrix[my, ny, la, si] = value
-        twomatrix[ny, my, la, si] = value
-        twomatrix[my, ny, si, la] = value
-        twomatrix[ny, my, si, la] = value
-        twomatrix[la, si, my, ny] = value
-        twomatrix[si, la, my, ny] = value
-        twomatrix[la, si, ny, my] = value
-        twomatrix[si, la, ny, my] = value
-    #H
-    H = numpy.zeros((NORB, NORB))
-    for my in range(NORB):
-        for ny in range(my + 1):
-            H[my, ny] = onedictionary[my, ny, - 1, - 1]
-            H[ny, my] = H[my, ny]
+            line=f.readline()
+            if line == '':break
+            integral = numpy.float64(line.split()[0])
+            my = int(line.split()[1])-1
+            ny = int(line.split()[2])-1
+            la = int(line.split()[3])-1
+            si = int(line.split()[4])-1
+            if my == ny == la == si == -1:
+                E_nucc = integral
+                print('found E_nucc')
+            if la == si == -1 and my != -1 and ny != -1:
+                H[my,ny] = integral
+                H[ny,my] = integral
+            elif my != -1 and ny != -1 and la != -1 and si != -1 :
+                twomatrix[my, ny, la, si] = integral
+                twomatrix[ny, my, la, si] = integral
+                twomatrix[my, ny, si, la] = integral
+                twomatrix[ny, my, si, la] = integral
+                twomatrix[la, si, my, ny] = integral
+                twomatrix[si, la, my, ny] = integral
+                twomatrix[la, si, ny, my] = integral
+                twomatrix[si, la, ny, my] = integral
+        print('finished init')
     return(NORB, NELEC, E_nucc, H, twomatrix, nml)
 
 def eigen(F):
