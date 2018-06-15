@@ -1,0 +1,48 @@
+started program
+in init
+3
+ &FCI NORB= 72,NELEC=14,MS2= 0,
+
+4
+  ORBSYM=1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+
+5
+  ISYM=0
+
+6
+ &END
+
+found the Namelist
+NORB= 72
+read the namelist
+found E_nucc
+finished init
+finished init
+NORB= 72 NELECa= 7 NELECb= 6 E_nucc= -274.570131624
+iters 1 Energy -328.802245648
+iters 2 Energy -328.844454806
+iters 3 Energy -328.854481955
+iters 4 Energy -328.860646112
+iters 5 Energy -328.865066643
+iters 6 Energy -328.868271377
+iters 7 Energy -328.870427733
+iters 8 Energy -328.87182383
+iters 9 Energy -328.872672124
+iters 10 Energy -328.873169554
+iters 11 Energy -328.87345011
+iters 12 Energy -328.873604676
+iters 13 Energy -328.873688096
+iters 14 Energy -328.873732542
+iters 15 Energy -328.873755992
+iters 16 Energy -328.873768291
+iters 17 Energy -328.873774716
+iters 18 Energy -328.873778068
+iters 19 Energy -328.873779817
+iters 20 Energy -328.87378073
+iters 21 Energy -328.87378121
+iters 22 Energy -328.873781462
+iters 23 Energy -328.873781597
+iters 24 Energy -328.873781669
+finished calculation
+skipped newFCIDUMP
+Done
