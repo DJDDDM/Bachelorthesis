@@ -108,15 +108,12 @@ def fcimaker(NORB, Ca, Cb, twomatrix,H,nml):
 def init():
     print('in init')
     with open(sys.argv[1],'r') as f:
+        print(sys.argv[1])
         with open('tmpnml.tmp','w')as g:
-            number=2
             #find and copy nml
             while True:
-                number += 1
-                print(number)
                 line = f.readline()
                 g.write(line)
-                print(line)
                 if line.find('&END') != -1:
                     print('found the Namelist')
                     break
