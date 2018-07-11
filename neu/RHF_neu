@@ -5,66 +5,44 @@ import f90nml
 import os
 
 def main():
-    global NORB, NELEC, E_nucc
-    print('started program')
+    global NORB, NELEC, E_nucc 
     NORB, NELEC, E_nucc, H, twomatrix, nml = init()
     NELEC+=int(sys.argv[3])
     if NELEC%2==0:
-        NELECa=NELEC/2
-        NELECb=NELEC/2
+        NOCC=int(NELEC/2)
     else:
-        NELECa=(NELEC+1)/2
-        NELECb=(NELEC-1)/2
-    NELECa=int(NELECa)
-    NELECb=int(NELECb)
+        print('odd')
+        sys.exit()
     E_old=0
     iters=1
-    print('finished init')
-    print('NORB=',NORB,'NELECa=',NELECa,'NELECb=',NELECb,'E_nucc=',E_nucc)
-    Pa=numpy.zeros((NORB,NORB))
-    Pb=numpy.zeros((NORB,NORB))
-    for a in range(NELECa):
-        Pa[a,a]=1
-    for b in range(NELECb):
-        Pb[b,b]=1
-    Pt=numpy.add(Pa,Pb)
+    print('NORB=',NORB,'NELEC=',NELEC,'NOCC=',NOCC,'E_nucc=',E_nucc)
+    P=numpy.zeros((NORB,NORB))
+    for a in range(NOCC):
+        P[a,a]=1
     
     diis=diis_class(NORB)
     dodiis=int(sys.argv[2])
 
     while True:
-        #P->G
-        Ga=numpy.tensordot(Pa,twomatrix,((0,1),(1,2)))
-        Gb=numpy.tensordot(Pb,twomatrix,((0,1),(1,2)))
-        Gt=numpy.tensordot(Pt,twomatrix,((0,1),(3,2)))
     
-        #G->F
-        Fa=numpy.subtract(numpy.add(H,Gt),Ga)
-        Fb=numpy.subtract(numpy.add(H,Gt),Gb)
+        #P->F
+        F=numpy.subtract(numpy.add(H,numpy.tensordot(numpy.multiply(2,P),twomatrix,((0,1),(3,2)))),numpy.tensordot(P,twomatrix,((0,1),(1,2))))
 
         #CDISS
-        if dodiis == 1 and iters>5:
-            Fa,Fb=diis.diis_func(Fa,Fb,Pa,Pb,iters)
-
-        #F->C
-        valsa, Ca = numpy.linalg.eig(Fa)
-        idx = valsa.argsort()[::1]
-        valsa=valsa[idx]
-        Ca=Ca[:,idx]
+        if dodiis==1:
+            F=diis.diis_func(F,P,iters)
     
-        valsb, Cb = numpy.linalg.eig(Fb)
-        idx = valsb.argsort()[::1]
-        valsb=valsb[idx]
-        Cb=Cb[:,idx]
+        #F->C
+        vals, C = numpy.linalg.eig(F)
+        idx = vals.argsort()[::1]
+        vals=vals[idx]
+        C=C[:,idx]
     
         #energy
-        E=0.5*(numpy.tensordot(Pt,H,((0,1),(1,0)))+numpy.tensordot(Pa,Fa,((0,1),(1,0)))+numpy.tensordot(Pb,Fb,((0,1),(1,0))))+E_nucc
+        E=numpy.add(E_nucc,numpy.tensordot(P,numpy.add(H,F),((0,1),(1,0))))
 
         #C->P
-        Pa=numpy.matmul(Ca[:,:NELECa],numpy.transpose(Ca[:,:NELECa]))
-        Pb=numpy.matmul(Cb[:,:NELECb],numpy.transpose(Cb[:,:NELECb]))
-        Pt=numpy.add(Pa,Pb)
-
+        P=numpy.matmul(C[:,:NOCC],numpy.transpose(C[:,:NOCC]))
     
         #loopcontrol
         print('iters',iters,'Energy',E)
@@ -85,49 +63,42 @@ class diis_class:
         self.diisiters=0
         self.maxdiis=5
         self.diis_error_matrices= numpy.zeros((self.maxdiis, NORB, NORB))
-        self.diis_focka_matrices= numpy.zeros_like(self.diis_error_matrices)
-        self.diis_fockb_matrices= numpy.zeros_like(self.diis_error_matrices)
+        self.diis_fock_matrices= numpy.zeros_like(self.diis_error_matrices)
 
-    def diis_func(self,focka,fockb, densa, densb, iters):
-        """ Extrapolate new fock matrixes based on input fock matrixes
+    def diis_func(self,fock, dens, iters):
+        """ Extrapolate new fock matrix based on input fock matrix
             and previous fock-matrices.
             Arguments:
-            focka -- current fock matrix alpha
-            fockb -- current fock matrix beta
+            fock -- current fock matrix
             Returns:
-            (focka, fockb) -- interpolated fock matrixes
+            (fock, error) -- interpolated fock matrix and diis-error
         """
-        diis_focka = numpy.zeros_like(focka)
-        diis_fockb = numpy.zeros_like(fockb)
+        diis_fock = numpy.zeros_like(fock)
     
         # copy data down to lower storage
         for k in reversed(range(1, min(iters, self.maxdiis))):
             self.diis_error_matrices[k] = self.diis_error_matrices[k-1][:]
-            self.diis_focka_matrices[k] = self.diis_focka_matrices[k-1][:]
-            self.diis_fockb_matrices[k] = self.diis_fockb_matrices[k-1][:]
+            self.diis_fock_matrices[k] = self.diis_fock_matrices[k-1][:]
     
-        # calculate error matrixes and add them to one
-        error_mata  = numpy.dot(focka, densa)
-        error_mata -= error_mata.T
-        error_matb  = numpy.dot(fockb, densb)
-        error_matb -= error_matb.T
-        error_mat = numpy.add(error_mata,error_matb)
-
+        # calculate error matrix
+        error_mat  = numpy.dot(fock, dens)
+        error_mat -= error_mat.T
+    
         #check for diis start and end
         e_max=error_mat.max()
         e_min=error_mat.min()
         #print('e_max',e_max, 'e_min',e_min)
         if e_max > 0.1 or e_min < -0.1 :
-            return focka, fockb
+            return fock
         if e_max < 10**-6 and e_min > -10**-6 :
-            return focka, fockb
+            return fock
         self.diisiters+=1
         print('diisiters=',self.diisiters)
     
-        # put matrixes in storage
+        # put orthogonal error matrix in storage
+        # pulay use S^(-1/2) but here we choose whatever the user has defined
         self.diis_error_matrices[0]  = error_mat
-        self.diis_focka_matrices[0] = focka[:]
-        self.diis_fockb_matrices[0] = fockb[:]
+        self.diis_fock_matrices[0] = fock[:]
     
         # calculate B-matrix and solve for coefficients that reduces error
         bsize = min(self.diisiters, self.maxdiis)
@@ -141,12 +112,12 @@ class diis_class:
         outsqr('bmat',bmat) 
         C =  numpy.linalg.solve(bmat, rhs)
 
-        # form new interpolated diis fock matrixes
+        # form new interpolated diis fock matrix
         for i, k in enumerate(C[:-1]):
-            diis_focka += k*self.diis_focka_matrices[i]
-            diis_fockb += k*self.diis_fockb_matrices[i]
+            diis_fock += k*self.diis_fock_matrices[i]
 
-        return diis_focka,diis_fockb
+        return diis_fock
+
 
 def fcimaker(NORB, Ca, Cb, twomatrix,H,nml):
     MO_a=numpy.tensordot(Ca,numpy.tensordot(Ca,numpy.tensordot(Ca,numpy.tensordot(Ca,twomatrix,((0),(3))),((0),(2))),((0),(1))),((0),(0)))
@@ -181,19 +152,16 @@ def fcimaker(NORB, Ca, Cb, twomatrix,H,nml):
     return
 
 def init():
-    print('in init')
     with open(sys.argv[1],'r') as f:
-        print(sys.argv[1])
+        print('inputfile:',sys.argv[1])
         with open('tmpnml.tmp','w')as g:
             #find and copy nml
             while True:
                 line = f.readline()
                 g.write(line)
                 if line.find('&END') != -1:
-                    print('found the Namelist')
                     break
                 if line.find(r'/') != -1:
-                    print('found the Namelist')
                     break
 
         with open('tmpnml.tmp') as g:
@@ -201,8 +169,6 @@ def init():
             nml = f90nml.read(g)
             NORB = nml['fci']['NORB']
             NELEC = nml['fci']['NELEC']
-            print('NORB=',NORB)
-            print('read the namelist')
         os.remove('tmpnml.tmp')
 
 
@@ -218,7 +184,6 @@ def init():
             si = int(line.split()[4])-1
             if my == ny == la == si == -1:
                 E_nucc = integral
-                print('found E_nucc')
             if la == si == -1 and my != -1 and ny != -1:
                 H[my,ny] = integral
                 H[ny,my] = integral
@@ -231,7 +196,6 @@ def init():
                 twomatrix[si, la, my, ny] = integral
                 twomatrix[la, si, ny, my] = integral
                 twomatrix[si, la, ny, my] = integral
-        print('finished init')
     return(NORB, NELEC, E_nucc, H, twomatrix, nml)
 
 def outsqr(title, mat, width=15):
