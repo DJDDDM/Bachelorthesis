@@ -5,8 +5,9 @@ import f90nml
 import os
 
 def main():
-    global NORB, NELEC, E_nucc 
-    NORB, NELEC, E_nucc, H, twomatrix, nml = init()
+    global NORB, NELEC, E_nucc, NOCC
+    #NORB, NELEC, E_nucc, H, twomatrix, nml = init()
+    NORB, NELEC, E_nucc, H, twomatrix, nml = init_notall()
     NELEC+=int(sys.argv[3])
     if NELEC%2==0:
         NOCC=int(NELEC/2)
@@ -31,7 +32,7 @@ def main():
         E=numpy.add(E_nucc,numpy.tensordot(P,numpy.add(H,F),((0,1),(1,0))))
         #DIIS
         if dodiis==1:
-            F=diis.diis_func(F,P,E,iters)
+            F,e_abs=diis.diis_func(F,P,E,iters)
         #F->C
         vals, C = numpy.linalg.eig(F)
         idx = vals.argsort()[::1]
@@ -41,17 +42,184 @@ def main():
         P=numpy.matmul(C[:,:NOCC],numpy.transpose(C[:,:NOCC]))
         #loopcontrol
         print('iters',iters,'Energy',E)
-        if abs(E-E_old)<10**-7: break
+        if e_abs < 10**-6 and dodiis==1:
+            print('iters',iters,'Energy',E,'e_abs=',e_abs)
+            print('converged on DIIS')
+            break
+        if abs(E-E_old)<10**-7 and dodiis != 1: break
         if iters > 1000:
             print('not converged after', iters ,'iterations')
             break
         E_old=E
         iters+=1
     
-    print('finished calculation')
-    #fcimaker(NORB, Ca, Cb, twomatrix,H,nml)
-    print('skipped newFCIDUMP')
-    print('Done')
+    print('Done RHF')
+    E_MP2=MP2(twomatrix,F,C)
+    print('E_MP2=',E_MP2)
+    print('RHF_E+E_MP2=',E+E_MP2)
+    E_MP3=MP3_class(twomatrix,vals,C).E_MP3_func()
+    print('E_MP3=',E_MP3)
+    print('E_MP2+E_MP3=',E_MP2+E_MP3)
+    print('RHF+MP2+MP3=',E+E_MP2+E_MP3)
+    E_MP3_lc = MP3_class(twomatrix, vals, C).E_MP3_func_lc()
+    print ('lc=', E_MP3_lc, 'loop=', E_MP3)
+
+class MP3_class:
+    def __init__(self,twomatrix,vals,C):
+        #transform twomatrix
+        self.twomatrix=transform.twomatrix_transform(twomatrix,C) 
+        #change twomatrix from chemiker to physiker notation
+        self.twomatrix=numpy.swapaxes(twomatrix,1,2)
+        #calculate sub_Matrix
+        self.sub_Matrix = self.sub_Matrix_init()
+        #get vals
+        self.vals = vals
+
+    def sub_Matrix_init(self):
+        self.sub_Matrix=numpy.zeros((NORB,NORB,NORB,NORB))
+        for a in range(NORB):
+            for b in range(NORB):
+                for c in range(NORB):
+                    for d in range(NORB):
+                        self.sub_Matrix[a,b,c,d]=2*self.twomatrix[a,b,c,d]-self.twomatrix[a,b,d,c]
+        return self.sub_Matrix
+
+    def mult_func(self,a,b,c,d,r,s,t,u):
+        return self.twomatrix[a,b,c,d]*self.twomatrix[r,s,t,u]+self.twomatrix[a,b,d,c]*self.twomatrix[r,s,u,t]
+
+    def E1_func(self):
+        E1=0
+        for a in range (NOCC):
+            for b in range (NOCC):
+                for c in range (NOCC):
+                    for d in range(NOCC):
+                        for r in range(NOCC,NORB):
+                            for s in range(NOCC,NORB):
+                                s1 = self.sub_Matrix[r,s,d,c]*self.mult_func(a,b,r,s,c,d,b,a)
+                                s2 = self.sub_Matrix[r,s,c,d]*self.mult_func(a,b,r,s,c,d,a,b)
+                                m1 = self.vals[a]+self.vals[b]-self.vals[r]-self.vals[s]
+                                m2 = self.vals[c]+self.vals[d]-self.vals[r]-self.vals[s]
+                                E1 += (s1+s2)/(m1*m2)
+        return E1
+
+    def E1_func_lc(self,a,b,c,d,r,s):
+        s1 = self.sub_Matrix[r,s,d,c]*self.mult_func(a,b,r,s,c,d,b,a)
+        s2 = self.sub_Matrix[r,s,c,d]*self.mult_func(a,b,r,s,c,d,a,b)
+        m1 = self.vals[a]+self.vals[b]-self.vals[r]-self.vals[s]
+        m2 = self.vals[c]+self.vals[d]-self.vals[r]-self.vals[s]
+        E1 = (s1+s2)/(m1*m2)
+        return E1
+
+    def E2_func(self):
+        E2=0
+        for a in range (NOCC):
+            for b in range (NOCC):
+                for r in range (NOCC,NORB):
+                    for s in range(NOCC,NORB):
+                        for t in range(NOCC,NORB):
+                            for u in range(NOCC,NORB):
+                                s1 = self.sub_Matrix[r,s,u,t]*self.mult_func(a,b,r,s,t,u,b,a)
+                                s2 = self.sub_Matrix[r,s,t,u]*self.mult_func(a,b,r,s,t,u,a,b)
+                                m1 = self.vals[a]+self.vals[b]-self.vals[r]-self.vals[s]
+                                m2 = self.vals[a]+self.vals[b]-self.vals[t]-self.vals[u]
+                                E2 += (s1+s2)/(m1*m2)
+        return E2
+
+    def E2_func_lc(self,a,b,r,s,t,u):
+        s1 = self.sub_Matrix[r,s,u,t]*self.mult_func(a,b,r,s,t,u,b,a)
+        s2 = self.sub_Matrix[r,s,t,u]*self.mult_func(a,b,r,s,t,u,a,b)
+        m1 = self.vals[a]+self.vals[b]-self.vals[r]-self.vals[s]
+        m2 = self.vals[a]+self.vals[b]-self.vals[t]-self.vals[u]
+        E2 = (s1+s2)/(m1*m2)
+        return E2
+
+    def E3_func(self):
+        E3=0
+        for a in range (NOCC):
+            for b in range (NOCC):
+                for c in range (NOCC):
+                    for r in range(NOCC,NORB):
+                        for s in range(NOCC,NORB):
+                            for t in range(NOCC,NORB):
+                                s1 = self.twomatrix[c,s,t,b]*self.sub_Matrix[r,t,a,c]*self.sub_Matrix[a,b,r,s]
+                                s2 = self.twomatrix[c,s,b,t]*self.twomatrix[a,b,s,r]*self.sub_Matrix[r,t,c,a]
+                                s3 = self.twomatrix[c,s,b,t]*self.twomatrix[a,b,r,s]*self.sub_Matrix[r,t,a,c]
+                                m1 = self.vals[a]+self.vals[b]-self.vals[r]-self.vals[s]
+                                m2 = self.vals[a]+self.vals[c]-self.vals[r]-self.vals[t]
+                                E3 += (s1-s2-s3)/(m1*m2)
+        return E3
+
+    def E3_func_lc(self,a,b,c,r,s,t):
+        s1 = self.twomatrix[c,s,t,b]*self.sub_Matrix[r,t,a,c]*self.sub_Matrix[a,b,r,s]
+        s2 = self.twomatrix[c,s,b,t]*self.twomatrix[a,b,s,r]*self.sub_Matrix[r,t,c,a]
+        s3 = self.twomatrix[c,s,b,t]*self.twomatrix[a,b,r,s]*self.sub_Matrix[r,t,a,c]
+        m1 = self.vals[a]+self.vals[b]-self.vals[r]-self.vals[s]
+        m2 = self.vals[a]+self.vals[c]-self.vals[r]-self.vals[t]
+        E3 = (s1-s2-s3)/(m1*m2)
+        return E3
+
+    def E_MP3_func(self):
+        E1 = self.E1_func()
+        E2 = self.E2_func()
+        E3 = self.E3_func()
+        E_MP3 = 0.25*E1+0.25*E2+2*E3
+        return E_MP3
+
+    def E_MP3_func_lc(self):
+        E1 = [self.E1_func_lc(a,b,c,d,r,s)
+                for a in range(NOCC)
+                for b in range(NOCC)
+                for c in range(NOCC)
+                for d in range(NOCC)
+                for r in range(NOCC,NORB)
+                for s in range(NOCC,NORB)
+                ]
+        E1 = numpy.sum(E1)
+        E2 = [self.E2_func_lc(a,b,r,s,t,u)
+                for a in range(NOCC)
+                for b in range(NOCC)
+                for r in range(NOCC, NORB)
+                for s in range(NOCC, NORB)
+                for t in range(NOCC, NORB)
+                for u in range(NOCC, NORB)
+                ]
+        E2 = numpy.sum(E2)
+        E3 = [self.E3_func_lc(a,b,c,r,s,t)
+                for a in range(NOCC)
+                for b in range(NOCC)
+                for c in range(NOCC)
+                for r in range(NOCC, NORB)
+                for s in range(NOCC, NORB)
+                for t in range(NOCC, NORB)
+                ]
+        E3 = numpy.sum(E3)
+        E_MP3 = 0.25*E1+0.25*E2+2*E3
+        return E_MP3
+
+class transform:
+    def F_transform(F,C):
+        return numpy.matmul(numpy.matmul(C.T,F),C)
+    def twomatrix_transform(twomatrix, C):
+        M=twomatrix
+        M=numpy.tensordot(C.T,M,((0),(0)))
+        M=numpy.tensordot(C.T,M,((0),(1)))
+        M=numpy.tensordot(C,M,((0),(2)))
+        M=numpy.tensordot(C,M,((0),(3)))
+        return M
+
+def MP2(twomatrix,F,C):
+    twomatrix=transform.twomatrix_transform(twomatrix,C)
+    F=transform.F_transform(F,C)
+    E_MP2=0
+    for a in range (NOCC):
+        for b in range (NOCC):
+            for r in range(NOCC,NORB):
+                for s in range(NOCC,NORB):
+                    E_MP2+=(2*twomatrix[a,r,b,s]**2-twomatrix[a,r,b,s]*twomatrix[a,s,b,r])/(F[a,a]+F[b,b]-F[r,r]-F[s,s])
+    return E_MP2
+
+
+
 
 class diis_class:
     def __init__(self,NORB):
@@ -90,23 +258,24 @@ class diis_class:
         #determine wether you go EDIIS or CDIIS
         e_max=error_mat.max()
         e_min=error_mat.min()
-        #print('e_max',e_max, 'e_min',e_min)
+        e_abs=max(abs(e_min),abs(e_max))
+        print('e_max',e_max, 'e_min',e_min)
         if e_max < 10**-6 and e_min > -10**-6 : #if really small then dont do DIIS
             print('noDIIS')
-            return fock
+            return fock,e_abs
         #EDIIS
         if e_max > 0.01 or e_min < -0.01 : #if big then do EDIIS
             print('EDIIS')
             #bmat
             bsize = min(iters, self.maxdiis)
-            bmat = -1.0*numpy.ones((bsize+1,bsize+1))
+            bmat = 1.0*numpy.ones((bsize+1,bsize+1))
             bmat[bsize, bsize] = 0
             for b1 in range(bsize):
                 for b2 in range(bsize):
                     bmat[b1, b2] = numpy.trace(self.diis_error_matrices[b1].dot(self.diis_error_matrices[b2]))
             #rhs
             rhs = numpy.zeros(bsize+1)
-            rhs[bsize] = -1
+            rhs[bsize] = 1
             for a in range(bsize):
                 rhs[a]=self.diis_energy[a]
             while True:
@@ -118,8 +287,9 @@ class diis_class:
                     bmat=numpy.delete(bmat,i,0)
                     bmat=numpy.delete(bmat,i,1)
                     rhs=numpy.delete(rhs,i,0)
-                    if len(rhs)==1: #no C_i<0 found
-                        return fock
+                    if len(rhs)==2: #no C_i<0 found
+                        print('found no EDIIS')
+                        return fock,e_abs
                     continue 
                 break
 
@@ -127,7 +297,7 @@ class diis_class:
             for i, k in enumerate(C[:-1]):
                 diis_fock += k*self.diis_fock_matrices[i]
 
-            return diis_fock
+            return diis_fock,e_abs
         #CDIIS
         else:   #if not big then do CDIIS
             print('CDIIS')
@@ -146,7 +316,7 @@ class diis_class:
             for i, k in enumerate(C[:-1]):
                 diis_fock += k*self.diis_fock_matrices[i]
 
-            return diis_fock
+            return diis_fock,e_abs
 
 
 def fcimaker(NORB, Ca, Cb, twomatrix,H,nml):
@@ -184,6 +354,57 @@ def fcimaker(NORB, Ca, Cb, twomatrix,H,nml):
 def init():
     with open(sys.argv[1],'r') as f:
         print('inputfile:',sys.argv[1])
+        with open('tmpnml.tmp','w')as g:
+            #find and copy nml
+            while True:
+                line = f.readline()
+                g.write(line)
+                if line.find('&END') != -1:
+                    break
+                if line.find(r'/') != -1:
+                    break
+
+        with open('tmpnml.tmp') as g:
+            #read the nml
+            nml = f90nml.read(g)
+            NORB = nml['fci']['NORB']
+            NELEC = nml['fci']['NELEC']
+        os.remove('tmpnml.tmp')
+
+        H = numpy.zeros((NORB, NORB))
+        twomatrix = numpy.zeros((NORB, NORB, NORB, NORB))
+        for my in range(NORB):
+            for ny in range(my+1):
+                for la in range(my+1):
+                    for si in range(la+1):
+                        if my==la and ny<si: continue
+                        line = f.readline()
+                        print(line) 
+                        integral=numpy.float64(line.split()[0])
+                        twomatrix[my, ny, la, si] = integral
+                        twomatrix[ny, my, la, si] = integral
+                        twomatrix[my, ny, si, la] = integral
+                        twomatrix[ny, my, si, la] = integral
+                        twomatrix[la, si, my, ny] = integral
+                        twomatrix[si, la, my, ny] = integral
+                        twomatrix[la, si, ny, my] = integral
+                        twomatrix[si, la, ny, my] = integral
+        for my in range(NORB):
+            for ny in range(my+1):
+                line= f.readline()
+                integral = numpy.float64(line.split()[0])
+                H[my,ny] = integral
+                H[ny,my] = integral
+        while True:
+            line= f.readline()
+            if int(line.split()[1]) == 0:
+                E_nucc = numpy.float64(line.split()[0])
+                break
+    return(NORB, NELEC, E_nucc, H, twomatrix, nml)
+
+def init_notall():
+    with open(sys.argv[1],'r') as f:
+        print('input=',sys.argv[1])
         with open('tmpnml.tmp','w')as g:
             #find and copy nml
             while True:
