@@ -4,63 +4,6 @@ import sys
 import f90nml
 import os
 
-def main_old():
-    global NORB, NELEC, E_nucc, NOCC
-    #NORB, NELEC, E_nucc, H, twomatrix, nml = init()
-    NORB, NELEC, E_nucc, H, twomatrix, nml = init_notall()
-    NELEC+=int(sys.argv[3])
-    if NELEC%2==0:
-        NOCC=int(NELEC/2)
-    else:
-        print('odd')
-        sys.exit()
-    E_old=0
-    iters=1
-    print('NORB=',NORB,'NELEC=',NELEC,'NOCC=',NOCC,'E_nucc=',E_nucc)
-    P=numpy.zeros((NORB,NORB))
-    for a in range(NOCC):
-        P[a,a]=1
-    
-    diis=diis_class(NORB)
-
-
-    while True:
-    
-        #P->F
-        F=numpy.subtract(numpy.add(H,numpy.tensordot(numpy.multiply(2,P),twomatrix,((0,1),(3,2)))),numpy.tensordot(P,twomatrix,((0,1),(1,2))))
-        #energy
-        E=numpy.add(E_nucc,numpy.tensordot(P,numpy.add(H,F),((0,1),(1,0))))
-        #DIIS
-        F,e_abs=diis.diis_func(F,P,E,iters)
-        #F->C
-        vals, C = numpy.linalg.eig(F)
-        idx = vals.argsort()[::1]
-        vals=vals[idx]
-        C=C[:,idx]
-        #C->P
-        P=numpy.matmul(C[:,:NOCC],numpy.transpose(C[:,:NOCC]))
-        #loopcontrol
-        print('iters',iters,'Energy',E)
-        if e_abs < 10**-6 and dodiis==1:
-            print('iters',iters,'Energy',E,'e_abs=',e_abs)
-            print('converged on DIIS')
-            break
-        if abs(E-E_old)<10**-7 and dodiis != 1: break
-        if iters > 1000:
-            print('not converged after', iters ,'iterations')
-            break
-        E_old=E
-        iters+=1
-    
-    print('Done RHF')
-    E_MP2=MP2(twomatrix,F,C)
-    print('E_MP2=',E_MP2)
-    print('RHF_E+E_MP2=',E+E_MP2)
-    E_MP3=MP3_class(twomatrix,vals,C).E_MP3_func()
-    print('E_MP3=',E_MP3)
-    print('E_MP2+E_MP3=',E_MP2+E_MP3)
-    print('RHF+MP2+MP3=',E+E_MP2+E_MP3)
-
 def main():
     global NORB, NELEC, E_nucc, NOCC
 
@@ -365,7 +308,7 @@ def fcimaker(NORB, Ca, Cb, twomatrix,H,nml):
     fcidump.close()
     return
 
-def init():
+def init_all():
     with open(sys.argv[1],'r') as f:
         print('inputfile:',sys.argv[1])
         with open('tmpnml.tmp','w')as g:
@@ -472,6 +415,198 @@ def outsqr(title, mat, width=15):
                             ''.join([frmt.format(val) for val in row])]) for i,
                             row in enumerate(mat)])
         print('\n'.join([title, headline, outline]))
+
+
+class CCSD:
+    def __init__(self,twomatrix):
+        self.t1 = numpy.zeros((NORB,NORB))
+        self.t2 = numpy.zeros((NORB, NORB, NORB, NORB))
+        self.tau = numpy.zeros((NORB, NORB, NORB, NORB))
+        self.twomatrix = twomatrix
+
+    def A3(self,be,u,ga,v):
+        A3 = [(self.twomatrix[i,u,j,v]*self.tau[be,i,ga,j])
+                for i in range(NOCC)
+                for j in range(NOCC)
+                ]
+        A3 = numpy.sum(A3)
+        return A3
+
+    def B3(self,be,u,ga,v):
+        B3 = [(self.twomatrix[be,a,ga,b]*self.tau[be,i,ga,j])
+                for a in range(NOCC,NORB)
+                for b in range(NOCC,NORB)
+                ]
+        B3 = numpy.sum(B3)
+        return B3
+
+    def C1(self,i,u,be,i):
+        C1 = [(self.twomatrix[i,u,be,a]*self.t1[a,i])
+                for a in range(NOCC,NORB)
+                ]
+        C1 = numpy.sum(C1)
+        return C1
+
+    def C2(self,u,be,ga,v):
+        C2 = [(self.twomatrix[be,a,i,u]*self.t2[ga,v,a,i])
+                for i in range(NOCC)
+                for a in range(NOCC,NORB)
+                ]
+        C2 = numpy.sum(C2)
+        return C2
+
+    def C3(self,u,be,ga,v):
+        C3 = [(self.twomatrix[u,i,ga,a]*self.tau[be,i,a,v])
+                for i in range(NOCC)
+                for a in range(NOCC, NORB)
+                ]
+        C3 = numpy.sum(C3)
+        return C3
+
+    def D1(self,be,u,i,v):
+        D1 = [(self.twomatrix[be,u,i,a]*self.t1[a,v])
+                for a in range(NOCC, NORB)
+                ]
+        D1 = numpy.sum(D1)
+        return D1
+
+    def D2a(self,i,a,ga,v):
+        D2a = [(self.twomatrix[j,b,i,a]*(2*self.t2[ga,v,b,j]-self.t2[b,v,ga,j]))
+                for j in range(NOCC)
+                for b in range(NOCC, NORB)
+                ]
+        D2a = numpy.sum(D2a)
+        return D2a
+
+    def D2b(self,i,a,ga,v):
+        D2b = [(self.twomatrix[i,b,j,a]*self.t2[ga,v,b,j])
+                for j in range(NOCC)
+                for b in range(NOCC, NORB)
+                ]
+        D2b = numpy.sum(D2b)
+        return D2b
+
+    def D2c(self,i,a,ga,v):
+        D2c = [(self.twomatrix[i,b,j,a]*self.t2[b,v,ga,j])
+                for j in range(NOCC)
+                for b in range(NOCC,NORB)
+                ]
+        D2c = numpy.sum(D2c)
+        return D2c
+
+    def D3(self,i,u,j,v):
+        D3 = [(self.twomatrix[i,a,j,b]*self.tau[a,u,b,v])
+                for a in range(NOCC,NORB)
+                for b in range(NOCC, NORB)
+                ]
+        D3 = numpy.sum(D3)
+        return D3
+
+    def D3s(self,be,a,b,c):
+        D3s = [(self.twomatrix[i,a,j,c]*self.tau[be,i,b,j])
+                for i in range(NOCC)
+                for j in range(NOCC)
+                ]
+        D3s = numpy.sum(D3s)
+        return D3s
+
+    def E1(self,i,u,j,v):
+        E1 = [(self.twomatrix[i,u,j,a]*self.t1[a,v])
+                for a in range(NOCC,NORB)
+                ]
+        E1 = numpy.sum(E1)
+        return E1
+
+    def E1s(self,i,u,j,v):
+        E1s = [(self.twomatrix[i,u,j,a]*self.t1[a,v])
+                for i in range(NOCC)
+                ]
+        E1s = numpy.sum(E1s)
+        return E1s
+
+    def E2a(self,i,u,ga,v):
+        E2a = [(self.twomatrix[j,b,i,u]*(2*self.t2[ga,v,b,j]-self.t2[b,v,ga,j]))
+                for j in range(NOCC)
+                for b in range(NOCC,NORB)
+                ]
+        E2a = numpy.sum(E2a)
+        return E2a
+
+    def E2b(self,i,u,ga,v):
+        E2b = [(self.twomatrix[i,b,j,u]*self.t2[ga,v,b,j])
+                for j in range(NOCC)
+                for b in range(NOCC,NORB)
+                ]
+        E2b = numpy.sum(E2b)
+        return E2b
+
+    def E2c(self,i,u,ga,v):
+        E2c = [(self.twomatrix[i,b,j,u]*self.t2[b,v,ga,j])
+                for j in range(NOCC)
+                for b in range(NOCC,NORB)
+                ]
+        E2c = numpy.sum(E2c)
+        return E2c
+
+    def F11(self,be,b,i,v):
+        F11 = [(self.twomatrix[be,b,i,a]*self.t1[a,v])
+                for a in range(NOCC,NORB)
+                ]
+        F11 = numpy.sum(F11)
+        return F11
+
+    def F12(self,i,b,be,v):
+        F12 = [(self.twomatrix[i,b,be,a]*self.t1[a,v])
+                for a in range(NOCC,NORB)
+                ]
+        F12 = numpy.sum(F12)
+        return F12
+
+    def F1s(self,be,a,b,c):
+        F1s = [(self.twomatrix[be,a,i,c]*self.t1[b,i])
+                for a in range(NOCC,NORB)
+                ]
+        F1s = numpy.sum(F1s)
+        return F1s
+
+    def F2a(self,be,u,i,v):
+        F2a = [(self.twomatrix[be,a,a,u]*(2*self.t2[a,u,b,i]-self.t2[b,u,a,i]))
+                for i in range(NOCC)
+                for b in range(NOCC,NORB)
+                ]
+        F2a = numpy.sum(F2a)
+        return F2a
+
+    def F3(self,be,u,i,v):
+        F3 = [(self.twomatrix[be,a,i,b]*self.tau[a,u,b,v])
+                for a in range(NOCC,NORB)
+                for b in range(NOCC,NORB)
+                ]
+        F3 = numpy.sum(F3)
+        return F3
+
+
+                
+
+
+
+
+
+
+        
+
+
+
+
+        
+
+
+
+
+
+
+
+
 
 if __name__ == '__main__':
     main()
