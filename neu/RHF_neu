@@ -4,7 +4,7 @@ import sys
 import f90nml
 import os
 
-def main():
+def main_old():
     global NORB, NELEC, E_nucc, NOCC
     #NORB, NELEC, E_nucc, H, twomatrix, nml = init()
     NORB, NELEC, E_nucc, H, twomatrix, nml = init_notall()
@@ -22,7 +22,7 @@ def main():
         P[a,a]=1
     
     diis=diis_class(NORB)
-    dodiis=int(sys.argv[2])
+
 
     while True:
     
@@ -31,8 +31,7 @@ def main():
         #energy
         E=numpy.add(E_nucc,numpy.tensordot(P,numpy.add(H,F),((0,1),(1,0))))
         #DIIS
-        if dodiis==1:
-            F,e_abs=diis.diis_func(F,P,E,iters)
+        F,e_abs=diis.diis_func(F,P,E,iters)
         #F->C
         vals, C = numpy.linalg.eig(F)
         idx = vals.argsort()[::1]
@@ -61,48 +60,105 @@ def main():
     print('E_MP3=',E_MP3)
     print('E_MP2+E_MP3=',E_MP2+E_MP3)
     print('RHF+MP2+MP3=',E+E_MP2+E_MP3)
-    E_MP3_lc = MP3_class(twomatrix, vals, C).E_MP3_func_lc()
-    print ('lc=', E_MP3_lc, 'loop=', E_MP3)
+
+def main():
+    global NORB, NELEC, E_nucc, NOCC
+
+    #IandO
+    #NORB, NELEC, E_nucc, H, twomatrix, nml = init()
+    NORB, NELEC, E_nucc, AO_H, AO_twomatrix, nml = init_notall()
+    NELEC+=int(sys.argv[3])
+    if NELEC%2==0:
+        NOCC=int(NELEC/2)
+    else:
+        print('odd')
+        sys.exit()
+    print('NORB=',NORB,'NELEC=',NELEC,'NOCC=',NOCC,'E_nucc=',E_nucc)
+
+    #RHF
+    RHF_dic = RHF().RHF_main(AO_twomatrix,AO_H)
+    print('Done RHF','RHF_E=', RHF_dic['RHF_E'] )
+
+    #Transformation
+    MO_F = numpy.matmul(numpy.matmul(RHF_dic['RHF_C'].T,RHF_dic['RHF_F']),RHF_dic['RHF_C'])
+    MO_twomatrix = twomatrix_transform(AO_twomatrix,RHF_dic['RHF_C'])
+
+    #MP2
+    E_MP2=MP2(MO_twomatrix,MO_F)
+    print('E_MP2=',E_MP2)
+    print('RHF_E+E_MP2=',RHF_dic['RHF_E']+E_MP2)
+    #MP3
+    E_MP3=MP3_class(MO_twomatrix,RHF_dic['RHF_vals']).E_MP3_func()
+    print('E_MP3=',E_MP3)
+    print('E_MP2+E_MP3=',E_MP2+E_MP3)
+    print('RHF+MP2+MP3=',RHF_dic['RHF_E']+E_MP2+E_MP3)
+
+
+
+class RHF:
+    def __init__(self):
+        self.E_old=0
+        self.iters=1
+        self.diis=diis_class(NORB)
+        self.P=numpy.zeros((NORB,NORB))
+        for a in range(NOCC):
+            self.P[a,a]=1
+
+    def RHF_main(self,twomatrix,H):
+        while True:
+            #P->F
+            F=numpy.subtract(numpy.add(H,numpy.tensordot(numpy.multiply(2,self.P),twomatrix,((0,1),(3,2)))),numpy.tensordot(self.P,twomatrix,((0,1),(1,2))))
+            #energy
+            E=numpy.add(E_nucc,numpy.tensordot(self.P,numpy.add(H,F),((0,1),(1,0))))
+            #DIIS
+            F,e_abs=self.diis.diis_func(F,self.P,E,self.iters)
+            #F->C
+            vals, C = numpy.linalg.eig(F)
+            idx = vals.argsort()[::1]
+            vals=vals[idx]
+            C=C[:,idx]
+            #C->P
+            self.P=numpy.matmul(C[:,:NOCC],numpy.transpose(C[:,:NOCC]))
+            #loopcontrol
+            print('iters',self.iters,'Energy',E)
+            if e_abs < 10**-6: 
+                print('iters',self.iters,'Energy',E,'e_abs=',e_abs)
+                print('converged on DIIS')
+                break
+            if abs(E-self.E_old)<10**-7 and dodiis != 1: break
+            if self.iters > 1000:
+                print('not converged after', self.iters ,'iterations')
+                break
+            self.E_old=E
+            self.iters+=1
+        RHF_dic = {
+                    "RHF_E" : E,
+                    "RHF_P" : self.P,
+                    "RHF_C" : C,
+                    "RHF_vals" : vals,
+                    "RHF_F" : F
+                    }
+        return RHF_dic
 
 class MP3_class:
-    def __init__(self,twomatrix,vals,C):
-        #transform twomatrix
-        self.twomatrix=transform.twomatrix_transform(twomatrix,C) 
+    def __init__(self,twomatrix,vals):
         #change twomatrix from chemiker to physiker notation
         self.twomatrix=numpy.swapaxes(twomatrix,1,2)
         #calculate sub_Matrix
-        self.sub_Matrix = self.sub_Matrix_init()
+        self.sub_Matrix = [(2*self.twomatrix[a,b,c,d]-self.twomatrix[a,b,d,c])
+                            for a in range(NORB)
+                            for b in range(NORB)
+                            for c in range(NORB)
+                            for d in range(NORB)
+                            ]
+        self.sub_Matrix = numpy.resize(self.sub_Matrix,(NORB,NORB,NORB,NORB))
         #get vals
         self.vals = vals
-
-    def sub_Matrix_init(self):
-        self.sub_Matrix=numpy.zeros((NORB,NORB,NORB,NORB))
-        for a in range(NORB):
-            for b in range(NORB):
-                for c in range(NORB):
-                    for d in range(NORB):
-                        self.sub_Matrix[a,b,c,d]=2*self.twomatrix[a,b,c,d]-self.twomatrix[a,b,d,c]
-        return self.sub_Matrix
 
     def mult_func(self,a,b,c,d,r,s,t,u):
         return self.twomatrix[a,b,c,d]*self.twomatrix[r,s,t,u]+self.twomatrix[a,b,d,c]*self.twomatrix[r,s,u,t]
 
-    def E1_func(self):
-        E1=0
-        for a in range (NOCC):
-            for b in range (NOCC):
-                for c in range (NOCC):
-                    for d in range(NOCC):
-                        for r in range(NOCC,NORB):
-                            for s in range(NOCC,NORB):
-                                s1 = self.sub_Matrix[r,s,d,c]*self.mult_func(a,b,r,s,c,d,b,a)
-                                s2 = self.sub_Matrix[r,s,c,d]*self.mult_func(a,b,r,s,c,d,a,b)
-                                m1 = self.vals[a]+self.vals[b]-self.vals[r]-self.vals[s]
-                                m2 = self.vals[c]+self.vals[d]-self.vals[r]-self.vals[s]
-                                E1 += (s1+s2)/(m1*m2)
-        return E1
-
-    def E1_func_lc(self,a,b,c,d,r,s):
+    def E1_func(self,a,b,c,d,r,s):
         s1 = self.sub_Matrix[r,s,d,c]*self.mult_func(a,b,r,s,c,d,b,a)
         s2 = self.sub_Matrix[r,s,c,d]*self.mult_func(a,b,r,s,c,d,a,b)
         m1 = self.vals[a]+self.vals[b]-self.vals[r]-self.vals[s]
@@ -110,22 +166,7 @@ class MP3_class:
         E1 = (s1+s2)/(m1*m2)
         return E1
 
-    def E2_func(self):
-        E2=0
-        for a in range (NOCC):
-            for b in range (NOCC):
-                for r in range (NOCC,NORB):
-                    for s in range(NOCC,NORB):
-                        for t in range(NOCC,NORB):
-                            for u in range(NOCC,NORB):
-                                s1 = self.sub_Matrix[r,s,u,t]*self.mult_func(a,b,r,s,t,u,b,a)
-                                s2 = self.sub_Matrix[r,s,t,u]*self.mult_func(a,b,r,s,t,u,a,b)
-                                m1 = self.vals[a]+self.vals[b]-self.vals[r]-self.vals[s]
-                                m2 = self.vals[a]+self.vals[b]-self.vals[t]-self.vals[u]
-                                E2 += (s1+s2)/(m1*m2)
-        return E2
-
-    def E2_func_lc(self,a,b,r,s,t,u):
+    def E2_func(self,a,b,r,s,t,u):
         s1 = self.sub_Matrix[r,s,u,t]*self.mult_func(a,b,r,s,t,u,b,a)
         s2 = self.sub_Matrix[r,s,t,u]*self.mult_func(a,b,r,s,t,u,a,b)
         m1 = self.vals[a]+self.vals[b]-self.vals[r]-self.vals[s]
@@ -133,23 +174,7 @@ class MP3_class:
         E2 = (s1+s2)/(m1*m2)
         return E2
 
-    def E3_func(self):
-        E3=0
-        for a in range (NOCC):
-            for b in range (NOCC):
-                for c in range (NOCC):
-                    for r in range(NOCC,NORB):
-                        for s in range(NOCC,NORB):
-                            for t in range(NOCC,NORB):
-                                s1 = self.twomatrix[c,s,t,b]*self.sub_Matrix[r,t,a,c]*self.sub_Matrix[a,b,r,s]
-                                s2 = self.twomatrix[c,s,b,t]*self.twomatrix[a,b,s,r]*self.sub_Matrix[r,t,c,a]
-                                s3 = self.twomatrix[c,s,b,t]*self.twomatrix[a,b,r,s]*self.sub_Matrix[r,t,a,c]
-                                m1 = self.vals[a]+self.vals[b]-self.vals[r]-self.vals[s]
-                                m2 = self.vals[a]+self.vals[c]-self.vals[r]-self.vals[t]
-                                E3 += (s1-s2-s3)/(m1*m2)
-        return E3
-
-    def E3_func_lc(self,a,b,c,r,s,t):
+    def E3_func(self,a,b,c,r,s,t):
         s1 = self.twomatrix[c,s,t,b]*self.sub_Matrix[r,t,a,c]*self.sub_Matrix[a,b,r,s]
         s2 = self.twomatrix[c,s,b,t]*self.twomatrix[a,b,s,r]*self.sub_Matrix[r,t,c,a]
         s3 = self.twomatrix[c,s,b,t]*self.twomatrix[a,b,r,s]*self.sub_Matrix[r,t,a,c]
@@ -159,14 +184,7 @@ class MP3_class:
         return E3
 
     def E_MP3_func(self):
-        E1 = self.E1_func()
-        E2 = self.E2_func()
-        E3 = self.E3_func()
-        E_MP3 = 0.25*E1+0.25*E2+2*E3
-        return E_MP3
-
-    def E_MP3_func_lc(self):
-        E1 = [self.E1_func_lc(a,b,c,d,r,s)
+        E1 = [self.E1_func(a,b,c,d,r,s)
                 for a in range(NOCC)
                 for b in range(NOCC)
                 for c in range(NOCC)
@@ -175,7 +193,7 @@ class MP3_class:
                 for s in range(NOCC,NORB)
                 ]
         E1 = numpy.sum(E1)
-        E2 = [self.E2_func_lc(a,b,r,s,t,u)
+        E2 = [self.E2_func(a,b,r,s,t,u)
                 for a in range(NOCC)
                 for b in range(NOCC)
                 for r in range(NOCC, NORB)
@@ -184,7 +202,7 @@ class MP3_class:
                 for u in range(NOCC, NORB)
                 ]
         E2 = numpy.sum(E2)
-        E3 = [self.E3_func_lc(a,b,c,r,s,t)
+        E3 = [self.E3_func(a,b,c,r,s,t)
                 for a in range(NOCC)
                 for b in range(NOCC)
                 for c in range(NOCC)
@@ -196,26 +214,22 @@ class MP3_class:
         E_MP3 = 0.25*E1+0.25*E2+2*E3
         return E_MP3
 
-class transform:
-    def F_transform(F,C):
-        return numpy.matmul(numpy.matmul(C.T,F),C)
-    def twomatrix_transform(twomatrix, C):
-        M=twomatrix
-        M=numpy.tensordot(C.T,M,((0),(0)))
-        M=numpy.tensordot(C.T,M,((0),(1)))
-        M=numpy.tensordot(C,M,((0),(2)))
-        M=numpy.tensordot(C,M,((0),(3)))
-        return M
+def twomatrix_transform(twomatrix, C):
+    M=twomatrix
+    M=numpy.tensordot(C.T,M,((0),(0)))
+    M=numpy.tensordot(C.T,M,((0),(1)))
+    M=numpy.tensordot(C,M,((0),(2)))
+    M=numpy.tensordot(C,M,((0),(3)))
+    return M
 
-def MP2(twomatrix,F,C):
-    twomatrix=transform.twomatrix_transform(twomatrix,C)
-    F=transform.F_transform(F,C)
-    E_MP2=0
-    for a in range (NOCC):
-        for b in range (NOCC):
-            for r in range(NOCC,NORB):
-                for s in range(NOCC,NORB):
-                    E_MP2+=(2*twomatrix[a,r,b,s]**2-twomatrix[a,r,b,s]*twomatrix[a,s,b,r])/(F[a,a]+F[b,b]-F[r,r]-F[s,s])
+def MP2(twomatrix,F):
+    E_MP2 = [(2*twomatrix[a,r,b,s]**2-twomatrix[a,r,b,s]*twomatrix[a,s,b,r])/(F[a,a]+F[b,b]-F[r,r]-F[s,s])
+                for a in range(NOCC)
+                for b in range(NOCC)
+                for r in range(NOCC,NORB)
+                for s in range(NOCC,NORB)
+                ]
+    E_MP2 = numpy.sum(E_MP2)
     return E_MP2
 
 
