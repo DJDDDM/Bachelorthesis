@@ -419,15 +419,14 @@ def outsqr(title, mat, width=15):
 
 class CCSD:
     def __init__(self,twomatrix,F):
-        self.t1 = numpy.zeros((NORB,NORB))
-        self.t2 = numpy.zeros((NORB, NORB, NORB, NORB))
-        self.tau = numpy.zeros((NORB, NORB, NORB, NORB))
+        self.t1 = numpy.zeros((NORB-NOCC,NOCC))
+        self.t2 = numpy.zeros((NORB-NOCC,NOCC,NORB-NOCC,NOCC))
+        self.tau = numpy.zeros((NORB-NOCC,NOCC,NORB-NOCC,NOCC))
         self.twomatrix = twomatrix
         self.F = F
     
-
     def t1_all():
-        self.t1 = [(t1_func(be,u))
+        self.t1 = [(self.t1_func(be,u))
                     for be in range(NOCC,NORB)
                     for u in range(NOCC)
                     ]
@@ -435,10 +434,102 @@ class CCSD:
         return self.t1
     
     def t1_func(self,be,u):
-        t1v = -t1_s1(be,u)+t1_s2(be,u)-t1_s3(be,u)+t1_s4(be,u)+t1_s5(be,u)-t1_s6(be,u)-t1_s7(be,u)-t1_s8(be,u)-t1_s9(be,u)+t1_s10(be,u)
-        t1v = t1v/t1_q1(be,u)
+        t1v = -self.t1_s1(be,u)+self.t1_s2(be,u)-self.t1_s3(be,u)+self.t1_s4(be,u)+self.t1_s5(be,u)-self.t1_s6(be,u)-self.t1_s7(be,u)
+        t1v = t1v - self.t1_s8(be,u)-self.t1_s9(be,u)+self.t1_s10(be,u)
+        t1v = t1v/self.t1_q1(be,u)
         return t1v
+
+
+    def t2_all():
+        self.t2 = [(self.t2_func(be,u,ga,v))
+                    for be in range(NOCC,NORB)
+                    for u in range(NOCC)
+                    for ga in range(NOCC,NORB)
+                    for v in range(NOCC)
+                    ]
+        self.t2 = numpy.resize(self.t2,(NORB-NOCC,NOCC,NORB-NOCC,NOCC))
+        return self.t2
+                
+    def t2_func(self,be,u,ga,v):
+        t2v = self.twomatrix[be,u,ga,v] + self.J(be,u,ga,v) + self.J(ga,v,be,u) + self.S(be,u,ga,v) + self.S(ga,v,be,u)
+        t2v = t2v/self.t2_q1(be,u,ga,v)
+        return t2v
+
+    def TT_func(self,be,u,ga,v):
+        return 0.5*self.t2[be,u,ga,v]+self.t1[be,u]*self.t1[ga,v]
+
+    def tau_all(self):
+        self.tau = [(self.tau_func(be,u,ga,v))
+                    for be in range(NOCC,NORB)
+                    for u in range(NOCC)
+                    for ga in range(NOCC,NORB)
+                    for v in range(NOCC)
+                    ]
+        self.tau = numpy.resize(self.tau,(NORB-NOCC,NOCC,NORB-NOCC,NOCC))
+
+
+    def tau_func(self,be,u,ga,v):
+        return self.t2[be,u,ga,v]+self.t1[be,u]*self.t1[ga,v]
         
+    def t2_q1(self,be,u,ga,v):
+        t2_q1 = self.F[u,u]+self.F[v,v]-self.F[be,be] - self.F[ga,ga]
+        return t2_q1
+
+    def S(self,be,u,ga,v):
+        S = self.S_s1(be,u,ga,v) - self.S_s2(u,be,ga,v) + self.S_s3(be,u,ga,v) + self.S_s4(be,u,ga,v) - self.S_s5(be,u,ga,v)
+        S = S - self.S_s6(be,u,ga,v) -self.S_s7(be,u,ga,v)
+        return S
+
+    def S_s1(self,be,u,ga,v):
+        S_s1 = 0.5*self.A3(be,u,ga,v) + 0.5*self.B3(be,u,ga,v) - self.E1s(be,u,ga,v)
+        return S_s1
+
+    def S_s2(self,u,be,ga,v):
+        S_s2 = self.C2(u,be,ga,v) + self.C3(u,be,ga,v) - self.D2a(u,be,ga,v) - F12(u,be,ga,v)
+        return S_s2
+
+    def J(self,be,u,ga,v):
+        J = self.J_s1(be,u,ga,v) - self.J_s2(be,u,ga,v) + self.J_s3(be,u,ga,v) + self.J_s4(be,u,ga,v) - self.J_s5(be,u,ga,v)
+        return J
+
+    def J_s1(self,be,u,ga,v):
+       J_s1 = [(self.F[be,a]*self.t2[a,u,ga,v])
+                for a in range(NOCC,NORB)
+                if a != be
+                ]
+       J_s1 = numpy.sum(J_s1)
+       return J_s1
+
+    def J_s2(self,be,u,ga,v):
+        J_s2 = [(self.F[i,u]*self.t2[be,i,ga,v])
+                for i in range(NOCC)
+                if i != u
+                ]
+        J_s2 = numpy.sum(J_s2)
+        return J_s2
+
+    def J_s3(self,be,u,ga,v):
+        J_s3 = [(self.F[i,a]*(self.t2[a,u,ga,v]*self.t1[be,i]+self.t2[be,u,ga,i]*self.t1[a,v]))
+                for i in range(NOCC)
+                for a in range(NOCC,NORB)
+                ]
+        J_s3 = numpy.sum(J_s3)
+        return J_s3
+
+    def J_s4(self,be,u,ga,v):
+        J_s4 = [(self.gbea(ga,a)*self.t2[be,u,a,v])
+                for a in range(NOCC,NORB)
+                ]
+        J_s4 = numpy.sum(J_s4)
+        return J_s4
+
+    def J_s5(self,be,u,ga,v):
+        J_s5 = [(self.giu(i,v)*self.t2[be,u,ga,i])
+                for i in range(NOCC)
+                ]
+        J_s5 = numpy.sum(J_s5)
+        return J_s5
+
 
     def t1_s1(self,be,u):
         return self.F[be,u]
@@ -446,8 +537,7 @@ class CCSD:
     def t1_s2(self,be,u):
         s2 = [(self.F[i,u]*self.t1[be,i])
                 for i in range(NOCC)
-                for u in range(NOCC)
-                if u != i
+                if i != u
                 ]
         s2 = numpy.sum(s2)
         return s2
@@ -455,8 +545,7 @@ class CCSD:
     def t1_s3(self,be,u):
         s3 = [(self.F[be,a]*self.t1[a,u])
                 for a in range(NORB,NOCC)
-                for be in range(NORB,NOCC)
-                if a!=be
+                if a != be
                 ]
         s3 = numpy.sum(s3)
         return s3
@@ -470,21 +559,21 @@ class CCSD:
         return s4
 
     def t1_s5(self,be,u):
-        s5 = [(giu(i,u)*self.t1[be,i])
+        s5 = [(self.giu(i,u)*self.t1[be,i])
                 for i in range(NOCC)
                 ]
         s5 = numpy.sum(s5)
         return s5
 
     def t1_s6(self,be,u):
-        s6 = [(gbea(be,a)*self.t1[a,u])
+        s6 = [(self.gbea(be,a)*self.t1[a,u])
                 for a in range(NOCC,NORB)
                 ]
         s6 = numpy.sum(s6)
         return s6
 
     def t1_s7(self,be,u):
-        s7 = [((2*D1(a,j,i,u)-D1(a,i,j,u))*self.t1[a,j]*self.t1[be,i])
+        s7 = [((2*self.D1(a,j,i,u)-self.D1(a,i,j,u))*self.t1[a,j]*self.t1[be,i])
                 for i in range(NOCC)
                 for j in range(NOCC)
                 for a in range(NOCC,NORB)
@@ -493,7 +582,7 @@ class CCSD:
         return s7
 
     def t1_s8(self,be,u):
-        s8 = [(((2*(D2a(i,a,be,u)-D2b(i,a,be,u)))+D2c(i,a,be,u))*self.t1[a,i])
+        s8 = [(((2*(self.D2a(i,a,be,u)-self.D2b(i,a,be,u)))+self.D2c(i,a,be,u))*self.t1[a,i])
                 for i in range(NOCC)
                 for a in range(NOCC,NORB)
                 ]
@@ -501,14 +590,14 @@ class CCSD:
         return s8
 
     def t1_s9(self,be,u):
-        s9 = [(F2a(be,a,a,u))
+        s9 = [(self.F2a(be,a,a,u))
                 for a in range(NOCC,NORB)
                 ]
         s9 = numpy.sum(s9)
         return s9
 
     def t1_s10(self,be,u):
-        s10 = [(0.5*(E2a(i,u,be,i)-E2b(i,u,be,i))+E2c(i,u,be,i)+C1(i,u,be,i)-2*D1(be,u,i,i))
+        s10 = [(0.5*(self.E2a(i,u,be,i)-self.E2b(i,u,be,i))+self.E2c(i,u,be,i)+self.C1(i,u,be,i)-2*self.D1(be,u,i,i))
                 for i in range(NOCC)
                 ]
         s10 = numpy.sum(s10)
@@ -518,21 +607,15 @@ class CCSD:
         q1 = self.F[be,be]-self.F[u,u]
         return q1
 
-    def TT_func(self,be,u,ga,v):
-        return 0.5*self.t2[be,u,ga,v]+self.t1[be,u]*self.t1[ga,v]
-
-    def tau_func(self,be,u,ga,v):
-        return self.t2[be,u,ga,v]+self.t1[be,u]*self.t1[ga,v]
-
     def giu(self,i,u):
-        giu = [(2*(E1(i,u,j,j)+D3[i,u,j,j])-(E1[j,u,i,j]+D2[j,u,i,j]))
+        giu = [(2*(self.E1(i,u,j,j)+self.D3[i,u,j,j])-(self.E1[j,u,i,j]+self.D2[j,u,i,j]))
                 for j in range(NOCC)
                 ]
         giu = numpy.sum(giu)
         return giu
 
     def gbea(self,be,a):
-        gbea = [(2*(F1s(be,a,b,b)-D3s(be,a,b,b))-(F1s(be,b,b,a)-D3s(be,b,b,a)))
+        gbea = [(2*(self.F1s(be,a,b,b)-self.D3s(be,a,b,b))-(self.F1s(be,b,b,a)-self.D3s(be,b,b,a)))
                 for b in range(NOCC,NORB)
                 ]
         gbea = numpy.sum(gbea)
@@ -554,7 +637,8 @@ class CCSD:
         B3 = numpy.sum(B3)
         return B3
 
-    def C1(self,i,u,be,i):
+    def C1(self,i,u,be,ifake):
+        ifake = i
         C1 = [(self.twomatrix[i,u,be,a]*self.t1[a,i])
                 for a in range(NOCC,NORB)
                 ]
