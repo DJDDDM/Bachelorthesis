@@ -35,6 +35,8 @@ def main():
     print('E_MP3=',E_MP3)
     print('E_MP2+E_MP3=',E_MP2+E_MP3)
     print('RHF+MP2+MP3=',RHF_dic['RHF_E']+E_MP2+E_MP3)
+    E_CCSD = CCSD_class(MO_twomatrix,MO_F).CCSD_main()
+    print('E_CCSD=')
 
 
 
@@ -417,15 +419,49 @@ def outsqr(title, mat, width=15):
         print('\n'.join([title, headline, outline]))
 
 
-class CCSD:
+class CCSD_class:
     def __init__(self,twomatrix,F):
         self.t1 = numpy.zeros((NORB-NOCC,NOCC))
         self.t2 = numpy.zeros((NORB-NOCC,NOCC,NORB-NOCC,NOCC))
         self.tau = numpy.zeros((NORB-NOCC,NOCC,NORB-NOCC,NOCC))
         self.twomatrix = twomatrix
         self.F = F
+
+    def CCSD_main(self):
+        E_old = 0
+        while true:
+            E_CCSD = self.E_CCSD()
+            print('E_CCSD=',E_CCSD)
+            self.t1 = self.t1_all()
+            self.t2 = self.t2_all()
+            self.tau = self.tau_all()
+            if abs(E_CCSD-E_CCSD_old) < 10**-6 : break
+        return E_CCSD
+
+    def E_CCSD(self):
+        E_CCSD = 2*E_CCSD_1()+E_CCSD_2()
+        return E_CCSD
+
+    def E_CCSD_1(self):
+        E_CCSD_1 = [(self.F[i,a]*self.t1[a,i])
+                    for i in range(NOCC)
+                    for a in range(NOCC,NORB)
+                    ]
+        E_CCSD_1 = numpy.sum(E_CCSD_1)
+        return E_CCSD_1
+
+    def E_CCSD_2(self):
+        E_CCSD_2 = [(self.twomatrix[i,a,j,b]*(2*self.tau[a,i,b,j]-self.tau[a,j,b,i]))
+                    for i in range(NOCC)
+                    for j in range(NOCC)
+                    for a in range(NOCC,NORB)
+                    for b in range(NOCC,NORB)
+                    ]
+        E_CCSD_2 = numpy.sum(E_CCSD_2)
+        return E_CCSD_2
+
     
-    def t1_all():
+    def t1_all(self):
         self.t1 = [(self.t1_func(be,u))
                     for be in range(NOCC,NORB)
                     for u in range(NOCC)
@@ -455,7 +491,7 @@ class CCSD:
         t2v = t2v/self.t2_q1(be,u,ga,v)
         return t2v
 
-    def TT_func(self,be,u,ga,v):
+    def TT(self,be,u,ga,v):
         return 0.5*self.t2[be,u,ga,v]+self.t1[be,u]*self.t1[ga,v]
 
     def tau_all(self):
@@ -487,6 +523,44 @@ class CCSD:
     def S_s2(self,u,be,ga,v):
         S_s2 = self.C2(u,be,ga,v) + self.C3(u,be,ga,v) - self.D2a(u,be,ga,v) - F12(u,be,ga,v)
         return S_s2
+
+    def S_s3(self,be,u,ga,v):
+        S_s3 = [((self.D2a(i,a,ga,v)-self.D2b(i,a,ga,v))*(self.t2[be,u,a,i]-self.TT(a,u,be,i))
+                    + 0.5*self.D2c(i,a,ga,v)*self.t2[be,u,a,i] + self.D2c(i,a,ga,u)*self.TT(a,v,be,i))
+                    for i in range(NOCC)
+                    for a in range(NOCC,NORB)
+                    ]
+        S_s3 = numpy.sum(S_s3)
+        return S_s3
+
+    def S_s4(self,be,u,ga,v):
+        S_s4 = [((0.5*self.D3[i,u,j,v]+E1[i,u,j,v])*self.tau[be,i,ga,j])
+                for i in range(NOCC)
+                for b in range(NOCC)
+                ]
+        S_s4 = numpy.sum(S_s4)
+        return S_s4
+
+    def S_s5(self,be,u,ga,v):
+        S_s5 = [((self.D1(be,u,i,v)+self.F3(be,u,i,v))*self.t1[ga,i])
+                for i in range(NOCC)
+                ]
+        S_s5 = numpy.sum(S_s5)
+        return S_s5
+
+    def S_s6(self,be,u,ga,v):
+        S_s6 = [(self.E2a(i,u,ga,v)-self.E2b(i,u,ga,v)-self.E2c[i,v,ga,u]*self.t1[be,i])
+                for i in range(NOCC)
+                ]
+        return S_s6
+
+    def S_s7(self,be,u,ga,v):
+        S_s7 = [(self.F11(ga,a,i,v)*self.t2[be,u,a,i] + self.F11(be,a,i,v)*self.t2[a,u,ga,i] - self.F12(i,a,ga,v)*(2*self.t2[be,u,a,i]-self.t2[a,u,be,i]))
+                for i in range(NOCC)
+                for a in range(NOCC,NORB)
+                ]
+        S_s7 = numpy.sum(S_s7)
+        return S_s7
 
     def J(self,be,u,ga,v):
         J = self.J_s1(be,u,ga,v) - self.J_s2(be,u,ga,v) + self.J_s3(be,u,ga,v) + self.J_s4(be,u,ga,v) - self.J_s5(be,u,ga,v)
