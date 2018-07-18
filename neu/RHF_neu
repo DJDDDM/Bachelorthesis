@@ -421,25 +421,31 @@ def outsqr(title, mat, width=15):
 
 class CCSD_class:
     def __init__(self,twomatrix,F):
-        self.t1 = numpy.zeros((NORB-NOCC,NOCC))
-        self.t2 = numpy.zeros((NORB-NOCC,NOCC,NORB-NOCC,NOCC))
-        self.tau = numpy.zeros((NORB-NOCC,NOCC,NORB-NOCC,NOCC))
+        self.t1 = numpy.zeros((NORB,NOCC))
+        self.t2 = numpy.zeros((NORB,NOCC,NORB,NOCC))
+        self.tau = numpy.zeros((NORB,NOCC,NORB,NOCC))
         self.twomatrix = twomatrix
         self.F = F
 
     def CCSD_main(self):
-        E_old = 0
-        while true:
+        E_old = 1
+        iters = 0
+        while True:
             E_CCSD = self.E_CCSD()
-            print('E_CCSD=',E_CCSD)
-            self.t1 = self.t1_all()
+            print('E_CCSD=',E_CCSD,'iters',iters)
+            #self.t1 = self.t1_all()
+            print('passed t1')
             self.t2 = self.t2_all()
+            print('passedt2')
             self.tau = self.tau_all()
-            if abs(E_CCSD-E_CCSD_old) < 10**-6 : break
+            print('passedtau')
+            if abs(E_CCSD-E_old) < 10**-6 : break
+            E_old = E_CCSD
+            iters +=1 
         return E_CCSD
 
     def E_CCSD(self):
-        E_CCSD = 2*E_CCSD_1()+E_CCSD_2()
+        E_CCSD = 2*self.E_CCSD_1()+self.E_CCSD_2()
         return E_CCSD
 
     def E_CCSD_1(self):
@@ -462,11 +468,14 @@ class CCSD_class:
 
     
     def t1_all(self):
-        self.t1 = [(self.t1_func(be,u))
+        t1_stor = [(self.t1_func(be,u))
                     for be in range(NOCC,NORB)
                     for u in range(NOCC)
                     ]
-        self.t1 = numpy.resize(self.t1,(NORB-NOCC,NOCC))
+        t1_stor = numpy.resize(t1_stor,(NORB-NOCC,NOCC))
+        for be in range(NOCC,NORB):
+            for u in range(NOCC):
+                self.t1[be,u] = t1_stor[be-NOCC,u]
         return self.t1
     
     def t1_func(self,be,u):
@@ -476,14 +485,19 @@ class CCSD_class:
         return t1v
 
 
-    def t2_all():
-        self.t2 = [(self.t2_func(be,u,ga,v))
+    def t2_all(self):
+        t2_stor = [(self.t2_func(be,u,ga,v))
                     for be in range(NOCC,NORB)
                     for u in range(NOCC)
                     for ga in range(NOCC,NORB)
                     for v in range(NOCC)
                     ]
-        self.t2 = numpy.resize(self.t2,(NORB-NOCC,NOCC,NORB-NOCC,NOCC))
+        t2_stor = numpy.resize(t2_stor,(NORB-NOCC,NOCC,NORB-NOCC,NOCC))
+        for be in range(NOCC,NORB):
+            for u in range(NOCC):
+                for ga in range(NOCC,NORB):
+                    for v in range(NOCC):
+                        self.t2[be,u,ga,v] = t2_stor[be-NOCC,u,ga-NOCC,v]
         return self.t2
                 
     def t2_func(self,be,u,ga,v):
@@ -495,13 +509,19 @@ class CCSD_class:
         return 0.5*self.t2[be,u,ga,v]+self.t1[be,u]*self.t1[ga,v]
 
     def tau_all(self):
-        self.tau = [(self.tau_func(be,u,ga,v))
+        tau_stor = [(self.tau_func(be,u,ga,v))
                     for be in range(NOCC,NORB)
                     for u in range(NOCC)
                     for ga in range(NOCC,NORB)
                     for v in range(NOCC)
                     ]
-        self.tau = numpy.resize(self.tau,(NORB-NOCC,NOCC,NORB-NOCC,NOCC))
+        tau_stor = numpy.resize(tau_stor,(NORB-NOCC,NOCC,NORB-NOCC,NOCC))
+        for be in range(NOCC,NORB):
+            for u in range(NOCC):
+                for ga in range(NOCC,NORB):
+                    for v in range(NOCC):
+                        self.tau[be,u,ga,v] = tau_stor[be-NOCC,u,ga-NOCC,v]
+        return self.tau
 
 
     def tau_func(self,be,u,ga,v):
@@ -521,7 +541,7 @@ class CCSD_class:
         return S_s1
 
     def S_s2(self,u,be,ga,v):
-        S_s2 = self.C2(u,be,ga,v) + self.C3(u,be,ga,v) - self.D2a(u,be,ga,v) - F12(u,be,ga,v)
+        S_s2 = self.C2(u,be,ga,v) + self.C3(u,be,ga,v) - self.D2a(u,be,ga,v) - self.F12(u,be,ga,v)
         return S_s2
 
     def S_s3(self,be,u,ga,v):
@@ -534,9 +554,9 @@ class CCSD_class:
         return S_s3
 
     def S_s4(self,be,u,ga,v):
-        S_s4 = [((0.5*self.D3[i,u,j,v]+E1[i,u,j,v])*self.tau[be,i,ga,j])
+        S_s4 = [((0.5*self.D3(i,u,j,v)+self.E1(i,u,j,v))*self.tau[be,i,ga,j])
                 for i in range(NOCC)
-                for b in range(NOCC)
+                for j in range(NOCC)
                 ]
         S_s4 = numpy.sum(S_s4)
         return S_s4
@@ -549,7 +569,7 @@ class CCSD_class:
         return S_s5
 
     def S_s6(self,be,u,ga,v):
-        S_s6 = [(self.E2a(i,u,ga,v)-self.E2b(i,u,ga,v)-self.E2c[i,v,ga,u]*self.t1[be,i])
+        S_s6 = [(self.E2a(i,u,ga,v)-self.E2b(i,u,ga,v)-self.E2c(i,v,ga,u)*self.t1[be,i])
                 for i in range(NOCC)
                 ]
         return S_s6
@@ -682,7 +702,7 @@ class CCSD_class:
         return q1
 
     def giu(self,i,u):
-        giu = [(2*(self.E1(i,u,j,j)+self.D3[i,u,j,j])-(self.E1[j,u,i,j]+self.D2[j,u,i,j]))
+        giu = [(2*(self.E1(i,u,j,j)+self.D3(i,u,j,j))-(self.E1(j,u,i,j)+self.D3(j,u,i,j)))
                 for j in range(NOCC)
                 ]
         giu = numpy.sum(giu)
@@ -704,7 +724,7 @@ class CCSD_class:
         return A3
 
     def B3(self,be,u,ga,v):
-        B3 = [(self.twomatrix[be,a,ga,b]*self.tau[be,i,ga,j])
+        B3 = [(self.twomatrix[be,a,ga,b]*self.tau[a,u,b,v])
                 for a in range(NOCC,NORB)
                 for b in range(NOCC,NORB)
                 ]
@@ -789,8 +809,8 @@ class CCSD_class:
         E1 = numpy.sum(E1)
         return E1
 
-    def E1s(self,i,u,j,v):
-        E1s = [(self.twomatrix[i,u,j,a]*self.t1[a,v])
+    def E1s(self,be,u,ga,v):
+        E1s = [(self.twomatrix[be,u,i,v]*self.t1[ga,i])
                 for i in range(NOCC)
                 ]
         E1s = numpy.sum(E1s)
@@ -836,12 +856,12 @@ class CCSD_class:
 
     def F1s(self,be,a,b,c):
         F1s = [(self.twomatrix[be,a,i,c]*self.t1[b,i])
-                for a in range(NOCC,NORB)
+                for i in range(NOCC)
                 ]
         F1s = numpy.sum(F1s)
         return F1s
 
-    def F2a(self,be,u,i,v):
+    def F2a(self,be,a,afake,u):
         F2a = [(self.twomatrix[be,a,a,u]*(2*self.t2[a,u,b,i]-self.t2[b,u,a,i]))
                 for i in range(NOCC)
                 for b in range(NOCC,NORB)
