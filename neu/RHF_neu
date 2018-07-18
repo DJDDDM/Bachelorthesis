@@ -37,7 +37,7 @@ def main():
     print('RHF+MP2+MP3=',RHF_dic['RHF_E']+E_MP2+E_MP3)
     E_CCSD = CCSD_class(MO_twomatrix,MO_F).CCSD_main()
     print('E_CCSD=',E_CCSD)
-    print('E_CCSD + E_RHF', E_CCSD + E_RHF)
+    print('E_CCSD + E_RHF', E_CCSD + E_dic['RHF_E'])
 
 
 
@@ -434,7 +434,7 @@ class CCSD_class:
         while True:
             E_CCSD = self.E_CCSD()
             print('E_CCSD=',E_CCSD,'iters',iters)
-            self.t1 = self.t1_all()
+            #self.t1 = self.t1_all()
             print('passed t1')
             self.t2 = self.t2_all()
             print('passedt2')
@@ -486,114 +486,30 @@ class CCSD_class:
         return t1v
 
 
-    def t2_all(self):
-        t2_stor = [(self.t2_func(be,u,ga,v))
-                    for be in range(NOCC,NORB)
-                    for u in range(NOCC)
-                    for ga in range(NOCC,NORB)
-                    for v in range(NOCC)
-                    ]
-        t2_stor = numpy.resize(t2_stor,(NORB-NOCC,NOCC,NORB-NOCC,NOCC))
-        for be in range(NOCC,NORB):
-            for u in range(NOCC):
-                for ga in range(NOCC,NORB):
-                    for v in range(NOCC):
-                        self.t2[be,u,ga,v] = t2_stor[be-NOCC,u,ga-NOCC,v]
-        return self.t2
-                
-    def t2_func(self,be,u,ga,v):
-        t2v = self.twomatrix[be,u,ga,v] + self.J(be,u,ga,v) + self.J(ga,v,be,u) + self.S(be,u,ga,v) + self.S(ga,v,be,u)
-        t2v = t2v/self.t2_q1(be,u,ga,v)
-        return t2v
-
-    def tau_all(self):
-        tau_stor = [(self.tau_func(be,u,ga,v))
-                    for be in range(NOCC,NORB)
-                    for u in range(NOCC)
-                    for ga in range(NOCC,NORB)
-                    for v in range(NOCC)
-                    ]
-        tau_stor = numpy.resize(tau_stor,(NORB-NOCC,NOCC,NORB-NOCC,NOCC))
-        for be in range(NOCC,NORB):
-            for u in range(NOCC):
-                for ga in range(NOCC,NORB):
-                    for v in range(NOCC):
-                        self.tau[be,u,ga,v] = tau_stor[be-NOCC,u,ga-NOCC,v]
-        return self.tau
-
-
-    def tau_func(self,be,u,ga,v):
-        return self.t2[be,u,ga,v]+self.t1[be,u]*self.t1[ga,v]
-        
-    def t2_q1(self,be,u,ga,v):
-        t2_q1 = self.F[u,u]+self.F[v,v]-self.F[be,be] - self.F[ga,ga]
-        return t2_q1
-
     def t1_q1(self,be,u):
         q1 = self.F[be,be]-self.F[u,u]
         return q1
 
-    def J(self,be,u,ga,v):
-        J = self.J_s1(be,u,ga,v) - self.J_s2(be,u,ga,v) + self.J_s3(be,u,ga,v) + self.J_s4(be,u,ga,v) - self.J_s5(be,u,ga,v)
-        return J
-
-    def J_s1(self,be,u,ga,v):
-       J_s1 = [(self.F[be,a]*self.t2[a,u,ga,v])
-                for a in range(NOCC,NORB)
-                if a != be
-                ]
-       J_s1 = numpy.sum(J_s1)
-       return J_s1
-
-    def J_s2(self,be,u,ga,v):
-        J_s2 = [(self.F[i,u]*self.t2[be,i,ga,v])
-                for i in range(NOCC)
-                if i != u
-                ]
-        J_s2 = numpy.sum(J_s2)
-        return J_s2
-
-    def J_s3(self,be,u,ga,v):
-        J_s3 = [(self.F[i,a]*(self.t2[a,u,ga,v]*self.t1[be,i]+self.t2[be,u,ga,i]*self.t1[a,v]))
-                for i in range(NOCC)
-                for a in range(NOCC,NORB)
-                ]
-        J_s3 = numpy.sum(J_s3)
-        return J_s3
-
-    def J_s4(self,be,u,ga,v):
-        J_s4 = [(self.gbea(ga,a)*self.t2[be,u,a,v])
-                for a in range(NOCC,NORB)
-                ]
-        J_s4 = numpy.sum(J_s4)
-        return J_s4
-
-    def J_s5(self,be,u,ga,v):
-        J_s5 = [(self.giu(i,v)*self.t2[be,u,ga,i])
-                for i in range(NOCC)
-                ]
-        J_s5 = numpy.sum(J_s5)
-        return J_s5
-
 
     def t1_s1(self,be,u):
-        return self.F[be,u]
+        t1_s1 = self.F[be,u]
+        return t1_s1
 
     def t1_s2(self,be,u):
-        s2 = [(self.F[i,u]*self.t1[be,i])
+        t1_s2 = [(self.F[i,u]*self.t1[be,i])
                 for i in range(NOCC)
                 if i != u
                 ]
-        s2 = numpy.sum(s2)
-        return s2
+        t1_s2 = numpy.sum(t1_s2)
+        return t1_s2
 
     def t1_s3(self,be,u):
-        s3 = [(self.F[be,a]*self.t1[a,u])
+        t1_s3 = [(self.F[be,a]*self.t1[a,u])
                 for a in range(NORB,NOCC)
                 if a != be
                 ]
-        s3 = numpy.sum(s3)
-        return s3
+        t1_s3 = numpy.sum(t1_s3)
+        return t1_s3
 
     def t1_s4(self,be,u):
         s4 = [(self.F[i,a]*(2*self.t2[be,u,a,i]-self.tau[a,u,be,i]))
@@ -647,6 +563,72 @@ class CCSD_class:
                 ]
         s10 = numpy.sum(s10)
         return s10
+
+    def t2_all(self):
+        t2_stor = [(self.t2_func(be,u,ga,v))
+                    for be in range(NOCC,NORB)
+                    for u in range(NOCC)
+                    for ga in range(NOCC,NORB)
+                    for v in range(NOCC)
+                    ]
+        t2_stor = numpy.resize(t2_stor,(NORB-NOCC,NOCC,NORB-NOCC,NOCC))
+        for be in range(NOCC,NORB):
+            for u in range(NOCC):
+                for ga in range(NOCC,NORB):
+                    for v in range(NOCC):
+                        self.t2[be,u,ga,v] = t2_stor[be-NOCC,u,ga-NOCC,v]
+        return self.t2
+                
+    def t2_func(self,be,u,ga,v):
+        t2v = self.twomatrix[be,u,ga,v] + self.J(be,u,ga,v) + self.J(ga,v,be,u) + self.S(be,u,ga,v) + self.S(ga,v,be,u)
+        t2v = t2v/self.t2_q1(be,u,ga,v)
+        return t2v
+
+    def t2_q1(self,be,u,ga,v):
+        t2_q1 = self.F[u,u]+self.F[v,v]-self.F[be,be] - self.F[ga,ga]
+        return t2_q1
+
+    def J(self,be,u,ga,v):
+        J = self.J_s1(be,u,ga,v) - self.J_s2(be,u,ga,v) + self.J_s3(be,u,ga,v) + self.J_s4(be,u,ga,v) - self.J_s5(be,u,ga,v)
+        return J
+
+    def J_s1(self,be,u,ga,v):
+       J_s1 = [(self.F[be,a]*self.t2[a,u,ga,v])
+                for a in range(NOCC,NORB)
+                if a != be
+                ]
+       J_s1 = numpy.sum(J_s1)
+       return J_s1
+
+    def J_s2(self,be,u,ga,v):
+        J_s2 = [(self.F[i,u]*self.t2[be,i,ga,v])
+                for i in range(NOCC)
+                if i != u
+                ]
+        J_s2 = numpy.sum(J_s2)
+        return J_s2
+
+    def J_s3(self,be,u,ga,v):
+        J_s3 = [(self.F[i,a]*(self.t2[a,u,ga,v]*self.t1[be,i]+self.t2[be,u,ga,i]*self.t1[a,v]))
+                for i in range(NOCC)
+                for a in range(NOCC,NORB)
+                ]
+        J_s3 = numpy.sum(J_s3)
+        return J_s3
+
+    def J_s4(self,be,u,ga,v):
+        J_s4 = [(self.gbea(ga,a)*self.t2[be,u,a,v])
+                for a in range(NOCC,NORB)
+                ]
+        J_s4 = numpy.sum(J_s4)
+        return J_s4
+
+    def J_s5(self,be,u,ga,v):
+        J_s5 = [(self.giu(i,v)*self.t2[be,u,ga,i])
+                for i in range(NOCC)
+                ]
+        J_s5 = numpy.sum(J_s5)
+        return J_s5
 
     def S(self,be,u,ga,v):
         S = self.S_s1(be,u,ga,v) - self.S_s2(u,be,ga,v) + self.S_s3(be,u,ga,v) + self.S_s4(be,u,ga,v) - self.S_s5(be,u,ga,v)
@@ -721,6 +703,25 @@ class CCSD_class:
         TT = 0.5*self.t2[be,u,ga,v]+self.t1[be,u]*self.t1[ga,v]
         return TT
 
+    def tau_all(self):
+        tau_stor = [(self.tau_func(be,u,ga,v))
+                    for be in range(NOCC,NORB)
+                    for u in range(NOCC)
+                    for ga in range(NOCC,NORB)
+                    for v in range(NOCC)
+                    ]
+        tau_stor = numpy.resize(tau_stor,(NORB-NOCC,NOCC,NORB-NOCC,NOCC))
+        for be in range(NOCC,NORB):
+            for u in range(NOCC):
+                for ga in range(NOCC,NORB):
+                    for v in range(NOCC):
+                        self.tau[be,u,ga,v] = tau_stor[be-NOCC,u,ga-NOCC,v]
+        return self.tau
+
+    def tau_func(self,be,u,ga,v):
+        tau = self.t2[be,u,ga,v]+self.t1[be,u]*self.t1[ga,v]
+        return tau
+        
     def A3(self,be,u,ga,v):
         A3 = [(self.twomatrix[i,u,j,v]*self.tau[be,i,ga,j])
                 for i in range(NOCC)
