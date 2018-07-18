@@ -732,7 +732,6 @@ class CCSD_class:
         return B3
 
     def C1(self,i,u,be,ifake):
-        ifake = i
         C1 = [(self.twomatrix[i,u,be,a]*self.t1[a,i])
                 for a in range(NOCC,NORB)
                 ]
@@ -862,7 +861,7 @@ class CCSD_class:
         return F1s
 
     def F2a(self,be,a,afake,u):
-        F2a = [(self.twomatrix[be,a,a,u]*(2*self.t2[a,u,b,i]-self.t2[b,u,a,i]))
+        F2a = [(self.twomatrix[be,a,i,b]*(2*self.t2[a,u,b,i]-self.t2[b,u,a,i]))
                 for i in range(NOCC)
                 for b in range(NOCC,NORB)
                 ]
