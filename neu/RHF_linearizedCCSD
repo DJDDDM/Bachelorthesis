@@ -35,9 +35,14 @@ def main():
     print('E_MP3=',E_MP3)
     print('E_MP2+E_MP3=',E_MP2+E_MP3)
     print('RHF+MP2+MP3=',RHF_dic['RHF_E']+E_MP2+E_MP3)
-    E_CCSD = CCSD_class(AO_twomatrix,RHF_dic['RHF_F']).CCSD_main()
-    print('E_CCSD=',E_CCSD)
-    print('E_CCSD + E_RHF', E_CCSD + RHF_dic['RHF_E'])
+    E_CCD2 = CCD2_class2(MO_twomatrix,RHF_dic['RHF_vals']).CCD_main()
+    print('E_CCD2',E_CCD2)
+    E_CCD = CCD_class(MO_twomatrix,RHF_dic['RHF_F']).CCSD_main()
+    print('E_CCD=',E_CCD)
+    #print('E_CCD + E_RHF', E_CCD + RHF_dic['RHF_E'])
+    E_LCCD = LCCD_class(AO_twomatrix,RHF_dic['RHF_F']).CCSD_main()
+    print('E_LCCD=',E_LCCD)
+    #print('E_LCCD + E_RHF', E_LCCD + RHF_dic['RHF_E'])
 
 
 
@@ -418,7 +423,7 @@ def outsqr(title, mat, width=15):
         print('\n'.join([title, headline, outline]))
 
 
-class CCSD_class:
+class CCD_class:
     def __init__(self,twomatrix,F):
         self.T = numpy.zeros((NORB,NOCC,NORB,NOCC))
         self.twomatrix = twomatrix
@@ -430,7 +435,111 @@ class CCSD_class:
         while True:
             self.T_mat()
             E_CCSD = self.E_CCSD()
-            print('E_CCSD=',E_CCSD,'iters',iters)
+            #print('E_CCSD=',E_CCSD,'iters',iters)
+            if abs(E_CCSD-E_old) < 10**-7 : break
+            E_old = E_CCSD
+            iters +=1 
+        return E_CCSD
+
+    def E_CCSD(self):
+        E_CCSD = [(self.twomatrix[i,a,j,b]*(2*self.T[a,i,b,j]-self.T[a,j,b,i]))
+                    for i in range(NOCC)
+                    for j in range(NOCC)
+                    for a in range(NOCC,NORB)
+                    for b in range(NOCC,NORB)
+                    ]
+        E_CCSD = numpy.sum(E_CCSD)
+        return E_CCSD
+
+    def T_mat(self):
+        for be in range(NOCC,NORB):
+            for u in range(NOCC):
+                for ga in range(NOCC,NORB):
+                    for v in range(NOCC):
+                        self.T[be,u,ga,v] = self.T_func(be,u,ga,v) + self.T_func(ga,v,be,u)
+
+    def T_func(self,be,u,ga,v):
+        #indizes
+        i = slice(NOCC)
+        j = slice(NOCC)
+
+        a = slice(NOCC,NORB)
+        b = slice(NOCC,NORB)
+
+        #ny
+        ny = 0.5*self.twomatrix[be,u,ga,v]
+
+        #J1
+        D3s1 = numpy.tensordot(self.twomatrix[i,a,j,b],self.T[be,i,b,j],((0,2,3),(0,2,1)))
+        D3s2 = numpy.tensordot(self.twomatrix[i,b,j,a],self.T[be,i,b,j],((0,1,2),(0,1,2)))
+        g = -2*D3s1 + D3s2
+        J1 = numpy.tensordot(g,self.T[be,u,a,v],((0),(0)))
+
+        #J2
+        D31 = numpy.tensordot(self.twomatrix[i,a,j,b],self.T[a,u,b,j],((1,2,3),(0,2,1)))
+        D32 = numpy.tensordot(self.twomatrix[j,a,i,b],self.T[a,u,b,j],((0,1,3),(2,0,1)))
+        g = 2*D31 - D32
+        J2 = numpy.tensordot(g,self.T[be,u,ga,i],((0),(0)))
+        
+        #s1
+        A3 = numpy.tensordot(self.twomatrix[i,u,j,v],self.T[be,i,ga,j],((0,1),(0,1))) #A3
+        B3 = numpy.tensordot(self.twomatrix[be,a,ga,b],self.T[a,u,b,v],((0,1),(0,1))) #B3
+        s1 = 0.5*A3 + 0.5*B3
+
+        #s2
+        C2 = numpy.tensordot(self.twomatrix[be,a,i,u],self.T[ga,v,a,i],((0,1),(0,1)))     #C2
+        C3 = numpy.tensordot(self.twomatrix[u,i,ga,a],self.T[be,i,a,v],((0,1),(0,1)))           #C3
+        D2a = numpy.tensordot(self.twomatrix[j,b,u,be],(2*self.T[ga,v,b,j]-self.T[b,v,ga,j]),((0,1),(1,0)))     #D2a.1
+        s2 = C2 + C3 - D2a
+
+        #s3
+        D2a = numpy.tensordot(self.twomatrix[j,b,i,a],(2*self.T[ga,v,b,j]-self.T[b,v,ga,j]),((0,1),(1,0)))
+        D2b = numpy.tensordot(self.twomatrix[i,b,j,a],self.T[ga,v,b,j],((1,2),(0,1)))
+        s3 = numpy.tensordot((D2a-D2b),(self.T[be,u,a,i]),((0,1),(1,0)))
+        s3 -= numpy.tensordot((D2a-D2b),(0.5*self.T[a,u,be,i]),((0,1),(1,0)))
+
+        #s4
+        D2c = numpy.tensordot(self.twomatrix[i,b,j,a],self.T[b,v,ga,j],((1,2),(0,1)))
+        s4 = 0.5*numpy.tensordot(D2c,self.T[be,u,a,i],((0,1),(1,0)))
+
+        #s5 
+        D2c = numpy.tensordot(self.twomatrix[i,b,j,a],self.T[b,u,ga,j],((1,2),(0,1)))
+        s5 = 0.5*numpy.tensordot(D2c,self.T[be,v,a,i],((0,1),(1,0)))
+
+        #s6
+        D3 = numpy.tensordot(self.twomatrix[i,a,j,b],self.T[a,u,b,v],((1,3),(0,1)))
+        s6 = 0.5*numpy.tensordot(D3,self.T[be,i,ga,j],((0,1),(0,1)))
+
+        #q
+        q = self.F[u,u]+self.F[v,v] - self.F[be,be] - self.F[ga,ga]
+
+        #T
+        #T = ny + J1 - J2 + s1 - s2 + s3 + s4 + s5 + s6
+        T = ny
+        T += J1
+        T -= J2
+        T += s1
+        T -= s2
+        T += s3
+        T += s4
+        T += s5
+        T += s6
+        T = T/q
+        return T
+
+class LCCD_class:
+    def __init__(self,twomatrix,F):
+        self.T = numpy.zeros((NORB,NOCC,NORB,NOCC))
+        self.twomatrix = twomatrix
+        self.F = F
+        
+    def CCSD_main(self):
+        E_old = 1
+        iters = 1
+        while True:
+            self.T_mat()
+            E_CCSD = self.E_CCSD()
+            #print('E_CCSD=',E_CCSD,'iters',iters)
             if abs(E_CCSD-E_old) < 10**-6 : break
             E_old = E_CCSD
             iters +=1 
@@ -493,6 +602,89 @@ class CCSD_class:
         T = ny + s1 - s2 + s3 -s4
         T = T/q1
         return T
+
+class CCD2_class2:
+    def __init__(self,twomatrix,vals):
+        self.two= twomatrix
+        self.vals = vals
+        self.T = numpy.zeros((NORB,NORB,NORB,NORB))
+
+    def E_CCD(self):
+        i = slice(0,NOCC)
+        j = slice(0,NOCC)
+        a = slice(NOCC,NORB)
+        b = slice(NOCC,NORB)
+
+        E_CCD = numpy.einsum('iajb,aibj',self.two[i,a,j,b],self.T[a,i,b,j])
+        print(E_CCD)
+        return E_CCD
+
+    def CCD_main(self):
+        E_CCD_old = 0
+        while True:
+            self.T_all()
+            E_CCD = self.E_CCD()
+            if abs(E_CCD-E_CCD_old) < 10**-7: break
+            E_CCD_old = E_CCD
+        return E_CCD
+
+    def T_all(self):
+        for f in range(NOCC,NORB):
+            for u in range(NOCC):
+                for g in range(NOCC,NORB):
+                    for v in range(NOCC):
+                        self.T[f,u,g,v] = self.T_func(f,u,g,v) + self.T_func(g,v,f,u)
+
+    def T_func(self,f,u,g,v):
+
+        i = slice(NOCC)
+        j = slice(NOCC)
+
+        a = slice(NOCC,NORB)
+        b = slice(NOCC,NORB)
+        
+        if f < NOCC:
+            print('ferror')
+            sys.exit()
+        if g < NOCC:
+            print('gerror')
+            sys.exit()
+        if u >= NOCC:
+            print('uerror')
+            sys.exit()
+        if v >= NOCC:
+            print('verror')
+            sys.exit()
+
+        f = slice(f,f+1)
+        u = slice(u,u+1)
+        g = slice(g,g+1)
+        v = slice(v,v+1)
+
+        #s1
+        A3 = numpy.einsum('iujv,figj->fugv',self.two[i,u,j,v],self.T[f,i,g,j]) 
+        B3 = numpy.einsum('fagb,aubv->fugv',self.two[f,a,g,b],self.T[a,u,b,v])
+        s1 = 0.5*A3 + 0.5*B3
+        s1 = s1[0,0,0,0]
+
+        #s3
+        C2 = numpy.einsum('faiu,gvai->ufgv',self.two[f,a,i,u],self.T[g,v,a,i])
+        C3 = numpy.einsum('uiga,fiav->ufgv',self.two[u,i,g,a],self.T[f,i,a,v])
+        D2a1 = numpy.einsum('jbuf,gvbj->ufgv',self.two[j,b,u,f],self.T[g,v,b,j])
+        D2a2 = numpy.einsum('jbuf,bvgj->ufgv',self.two[j,b,u,f],self.T[b,v,g,j])
+        s3 = C2 + C3 - D2a1 + D2a2
+        s3 = s3[0,0,0,0] 
+        
+        #q
+        q = self.vals[u]+self.vals[v] - self.vals[f] - self.vals[g]
+        q=q[0]
+        
+        #T
+        T = (0.5*self.two[f,u,g,v] + s1 -s3)/q
+        return T
+        
+
+
 
 if __name__ == '__main__':
     main()
