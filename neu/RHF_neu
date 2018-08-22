@@ -26,7 +26,7 @@ def main():
     MO_F = numpy.matmul(numpy.matmul(RHF_dic['RHF_C'].T,RHF_dic['RHF_F']),RHF_dic['RHF_C'])
     MO_twomatrix = twomatrix_transform(AO_twomatrix,RHF_dic['RHF_C'])
 
-    #MP2
+    ##MP2
     E_MP2=MP2(MO_twomatrix,MO_F)
     print('E_MP2=',E_MP2)
     print('RHF_E+E_MP2=',RHF_dic['RHF_E']+E_MP2)
@@ -35,9 +35,9 @@ def main():
     print('E_MP3=',E_MP3)
     print('E_MP2+E_MP3=',E_MP2+E_MP3)
     print('RHF+MP2+MP3=',RHF_dic['RHF_E']+E_MP2+E_MP3)
-    E_CCSD = CCSD_class(MO_twomatrix,MO_F).CCSD_main()
-    print('E_CCSD=',E_CCSD)
-    print('E_CCSD + E_RHF', E_CCSD + RHF_dic['RHF_E'])
+    #E_CCSD = CCSD_class(MO_twomatrix,MO_F).CCSD_main()
+    #print('E_CCSD=',E_CCSD)
+    #print('E_CCSD + E_RHF', E_CCSD + RHF_dic['RHF_E'])
 
 
 

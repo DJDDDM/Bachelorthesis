@@ -135,13 +135,13 @@ class diis_class:
             print('EDIIS')
             # calculate B-matrix
             bsize = min(iters, self.maxdiis)
-            bmat = -1.0*numpy.ones((bsize+1,bsize+1))
+            bmat = 1.0*numpy.ones((bsize+1,bsize+1))
             bmat[bsize, bsize] = 0
             for b1 in range(bsize):
                 for b2 in range(bsize):
                     bmat[b1, b2] = numpy.trace(self.diis_error_matrices[b1].dot(self.diis_error_matrices[b2]))
             rhs = numpy.zeros(bsize+1)
-            rhs[bsize] = -1
+            rhs[bsize] = 1
             for a in range(bsize):
                 rhs[a]=self.diis_energy[a]
             while True:

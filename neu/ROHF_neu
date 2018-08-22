@@ -114,15 +114,12 @@ def main():
 def init():
     print('in init')
     with open(sys.argv[1],'r') as f:
+        print(sys.argv[1])
         with open('tmpnml.tmp','w')as g:
-            number=2
             #find and copy nml
             while True:
-                number += 1
-                print(number)
                 line = f.readline()
                 g.write(line)
-                print(line)
                 if line.find('&END') != -1:
                     print('found the Namelist')
                     break
@@ -185,7 +182,7 @@ def exchangematrix(P):
     return e
 
 def energy(NORB,E_nucc,H,Pd,Ps,Fde,Fse):
-    E=0.5*(numpy.tensordot(Pd,numpy.add(H,Fde),((0,1),(0,1)))+numpy.tensordot(Ps,numpy.add(H,Fse),((0,1),(0,1))))+E_nucc
+    E=numpy.multiply(0.5,(numpy.add(numpy.tensordot(Pd,numpy.add(H,Fde),((0,1),(0,1))),numpy.tensordot(Ps,numpy.add(H,Fse),((0,1),(0,1))))))+E_nucc
     return E
 
 def fcimaker(NORB, DSE, dic, H, nml):
