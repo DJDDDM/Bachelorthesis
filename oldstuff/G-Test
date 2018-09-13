@@ -1,0 +1,13 @@
+#!/usr/bin/python
+
+from decimal import *
+
+def hf(do_dbg=False):
+  E = Decimal(0.)  #Energy
+  with open ("FCIDUMP") as f:
+
+    for dummy in xrange(4):
+      next(f)
+    for line in f:
+      integral = Decimal(line.split()[0])   #I_iiii
+      indizes = [int(idx) for idx in line.split()[1:]]    #(I_)ijkl

@@ -1,0 +1,270 @@
+#!/usr/bin/python3
+import numpy
+import scipy
+from decimal import *
+import sys
+import pdb
+
+def main():
+  global dtype
+  global NORB
+  global dic
+  global NELECd
+  global NELECs
+  global NELECe
+  global H
+  dtype=numpy.dtype(numpy.float64)
+  z0=numpy.float64(0)
+  z05=numpy.float64(0.5)
+  z2=numpy.float64(2)
+  NORB,NELEC,E_nucc,onedictionary,twodictionary=dicfunction()
+  #NELEC+=electroninp()
+  iters=1
+  E_0_old=z0
+  E_old=z0
+  old_ener=0
+  dic=dicmatrix(NORB,twodictionary)
+  H=hmatrix(NORB,onedictionary)
+
+  #print(NELEC,NORB)
+  #if NELEC/2>NORB:
+  #  print('NOCC>NORB')
+  #  sys.exit()
+  #if NELEC%2!=0:
+  #  print('odd number of electrons. use UHF')
+  #  sys.exit()
+  #if NELEC<0:
+  #  print('NELEC<0')
+  #  sys.exit()
+
+  NELECd=3
+  NELECs=0
+  NELECe=NORB-NELECd-NELECs
+  print(NELEC,NELECd,NELECs,NELECe,NORB)
+
+
+
+  while True:
+    if iters==1:
+      #DSE=DSEinitial(NELEC)
+      DSE=numpy.identity(NORB)
+      outsqr('DSE',DSE)
+      D=DSE[:,:NELECd]
+      S=DSE[:,NELECd:NELECd+NELECs]
+      E=DSE[:,NELECd+NELECs:NELECd+NELECs+NELECe]
+      DE=numpy.zeros((NORB,NELECd+NELECe))
+      DS=numpy.zeros((NORB,NELECd+NELECs))
+      SE=numpy.zeros((NORB,NELECs+NELECe))
+      Fse=numpy.zeros((NORB,NORB))
+      Fde=numpy.zeros((NORB,NORB))
+      Pd=numpy.zeros((NORB,NORB))
+      Ps=numpy.zeros((NORB,NORB))
+      for a in range (NELECd):
+        Pd[a,a]=2
+      for b in range (NELECs):
+        Ps[b,b]=1
+    
+    Fde=H+coulombmatrix(Pd+Ps)-0.5*exchangematrix(Pd+Ps)
+    for j in range (NELECd):
+      DE[:,j]=D[:,j]
+    for m in range (NELECe):
+      DE[:,m+NELECd]=E[:,m]
+    FdeMO=numpy.matmul(numpy.matmul(DE.transpose(),Fde),DE)
+    valsDE,vecsDE=eigen(FdeMO)
+    DE=numpy.matmul(DE,vecsDE)
+    for j in range (NELECd):
+      D[:,j]=DE[:,j]
+    for m in range (NELECe):
+      E[:,m]=DE[:,m+NELECd]
+    ener=energy(NORB,E_nucc,H,Pd,Ps,Fde,Fse)
+    print('ENERGY:',ener,'ITERATION:',iters)
+    Pd=2*numpy.matmul(DE[:,:NELECd],numpy.transpose(DE[:,:NELECd]))
+    #outsqr('DE',DE)
+    #outsqr('P',Pd)
+    
+    Fse=H+coulombmatrix(Pd+Ps)-exchangematrix(0.5*Pd+Ps)
+    for j in range (NELECs):
+      SE[:,j]=S[:,j]
+    for m in range (NELECe):
+      SE[:,m+NELECs]=E[:,m]
+    FseMO=numpy.matmul(numpy.matmul(SE.transpose(),Fse),SE)
+    valsSE,vecsSE=eigen(FseMO)
+    SE=numpy.matmul(SE,vecsSE)
+    for j in range (NELECs):
+      S[:,j]=SE[:,j]
+    for m in range (NELECe):
+      E[:,m]=SE[:,m+NELECs]
+    Ps=numpy.matmul(SE[:,:NELECs],numpy.transpose(SE[:,:NELECs]))
+
+    Fds=H+coulombmatrix(Pd+Ps)-exchangematrix(0.5*Pd)
+    for j in range (NELECd):
+      DS[:,j]=D[:,j]
+    for m in range (NELECs):
+      DS[:,m+NELECd]=S[:,m]
+    FdsMO=numpy.matmul(numpy.matmul(DS.transpose(),Fds),DS)
+    valsDS,vecsDS=eigen(FdsMO)
+    DS=numpy.matmul(DS,vecsDS)
+    for j in range (NELECd):
+      D[:,j]=DS[:,j]
+    for m in range (NELECs):
+      S[:,m]=DS[:,m+NELECd]
+    Pd=2*numpy.matmul(DS[:,:NELECd],numpy.transpose(DS[:,:NELECd]))
+    Ps=numpy.matmul(DS[:,NELECd:NELECd+NELECs],numpy.transpose(DS[:,NELECd:NELECd+NELECs]))
+
+    #outsqr('P',Pd)
+    #outsqr('F',Fde)
+    #outsqr('H',H)
+    ener=energy(NORB,E_nucc,H,Pd,Ps,Fde,Fse)
+    print('ENERGY:',ener,'ITERATION:',iters)
+    #if abs(old_ener-ener)<10**-5:break
+    iters+=1
+    old_ener=ener
+    if iters>10:
+      break
+  print('finished')    
+  #fcimaker(NORB,vecs,dic)
+
+def dicfunction():
+  twodictionary={}
+  onedictionary={}
+  with open (sys.argv[1]) as f:
+    line=f.readline()
+    line=line.strip()
+    NORB=line.split('NORB=')[1]
+    NORB=int(NORB.split(',')[0])
+    NELEC=line.split('NELEC=')[1]
+    NELEC=int(NELEC.split(',')[0])
+    for dummy in range(1,4):
+      next(f)
+    for line in f:
+      indizes=[]
+      for i in range(1,5):
+        indizes.append(int(line.split()[i])-1)
+      if indizes[0]==indizes[1]==indizes[2]==indizes[3]==-1:
+        E_nucc=numpy.float64(line.split()[0])
+      elif indizes[2]==indizes[3]==-1:
+        onedictionary[indizes[0],indizes[1],indizes[2],indizes[3]]=numpy.float64(line.split()[0])
+      else:
+        twodictionary[indizes[0],indizes[1],indizes[2],indizes[3]]=numpy.float64(line.split()[0])
+  return (NORB,NELEC,E_nucc,onedictionary,twodictionary)
+
+def hmatrix(NORB,onedictionary):
+  global dtype
+  H=numpy.zeros((NORB,NORB),dtype)
+  for my in range (NORB):
+    for ny in range (my+1):
+      H[my,ny]=onedictionary[my,ny,-1,-1]
+      H[ny,my]=H[my,ny]
+  return H
+
+def eigen(F):
+  vecs=numpy.zeros((len(F),len(F)),dtype)
+  vals,vecs=numpy.linalg.eig(F)
+  idx=vals.argsort()
+  vals=vals[idx]
+  vecs=vecs[:,idx]
+  return vals,vecs
+
+def pmatrix(NORB,NELEC,vecs):
+  P=numpy.zeros((NORB,NORB))
+  if NELEC==NELECd:
+    for my in range (NORB):
+      for ny in range (NORB):
+        for a in range (NELEC):
+          P[ny,my]+=2*vecs[my,a]*vecs[ny,a]
+  elif NELEC==NELECs:
+    for my in range (NORB):
+      for ny in range (NORB):
+        for a in range (NELEC):
+          P[ny,my]+=vecs[my,a]*vecs[ny,a]
+  else:
+    print ('error')
+    sys.exit()
+  return P
+
+def dicmatrix(NORB,dictionary):
+  dic=numpy.zeros((NORB,NORB,NORB,NORB))
+  for key,value in dictionary.items():
+    my=key[0]
+    ny=key[1]
+    la=key[2]
+    si=key[3]
+    dic[my,ny,la,si]=value
+    dic[ny,my,la,si]=value
+    dic[my,ny,si,la]=value
+    dic[ny,my,si,la]=value
+    dic[la,si,my,ny]=value
+    dic[si,la,my,ny]=value
+    dic[la,si,ny,my]=value
+    dic[si,la,ny,my]=value
+  return dic
+
+def coulombmatrix(P):
+  c=numpy.zeros((NORB,NORB))
+  for my in range (NORB):
+    for ny in range(NORB):
+      for la in range(NORB):
+        for si in range(NORB):
+          c[my,ny]+=P[la,si]*dic[my,ny,la,si]
+  return c
+
+def exchangematrix(P):
+  e=numpy.zeros((NORB,NORB))
+  for my in range (NORB):
+    for ny in range(NORB):
+      for la in range(NORB):
+        for si in range(NORB):
+          e[my,ny]+=P[la,si]*dic[my,la,si,ny]
+  return e
+
+def energy(NORB,E_nucc,H,Pd,Ps,Fde,Fse):
+  E=E_nucc
+  for my in range(NORB):
+    for ny in range(NORB):
+      E+=0.5*(Pd[my,ny]*(H[my,ny]+Fde[my,ny])+Ps[my,ny]*(H[my,ny]+Fse[my,ny]))
+  return E
+
+def DSEinitial(NELEC):
+  DSE=numpy.identity(NORB)
+  P=numpy.zeros((NORB,NORB))
+  for a in range(int(NELEC/2)):
+    P[a,a]=2
+  F=H+coulombmatrix(P)-0.5*exchangematrix(P)
+  vecs=numpy.zeros((NORB,NORB))
+  vals,vecs=numpy.linalg.eig(F)
+  idx=vals.argsort()
+  DSE=DSE[:,idx]
+  return DSE 
+
+def electroninp():        #read electronaddinginput
+  #print ('How much electrons you want to add?')
+  #electronadd=int(input())
+  electronadd=0
+  return electronadd
+
+def fcimaker(NORB,vecs,dic):
+  fcidump=open('FCIDUMPNEW','w')
+  for I in range (1,NORB+1):
+    for J in range (1,I+1):
+      for K in range (1,I+1):
+        for L in range (1,K+1):
+          if (I==K and J<L): continue
+          value=0
+          for my in range (NORB):
+            for ny in range (NORB):
+              for la in range (NORB):
+                for si in range (NORB):
+                  value+=vecs[my,I-1]*vecs[ny,J-1]*vecs[la,K-1]*vecs[si,L-1]*dic[my,ny,la,si]
+          fcidump.write('{} {} {} {}'.format(value,I,J,K,L))
+  fcidump.close()
+  return
+
+def outsqr(title,mat,width=15):
+    frmt=''.join(['{:>',str(width),'.',str(max(width-7,0)),'f}'])
+    ifrmt=''.join(['{:^',str(width),'d}'])
+    headline=''.join([ifrmt.format(i) for i in range(len(mat)+1)])
+    outline='\n'.join([''.join([ifrmt.format(i+1),''.join([frmt.format(val) for val in row])]) for i,row in enumerate(mat)])
+    print ('\n'.join([title,headline,outline]))
+
+if __name__=='__main__':
+  main()

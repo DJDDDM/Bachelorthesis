@@ -1,0 +1,279 @@
+#!/usr/bin/python3
+import numpy
+import sys
+import f90nml
+import os
+
+def main():
+    global NORB, NELEC, E_nucc
+    NORB, NELEC, E_nucc, H, twomatrix, nml = init()
+    NELEC+=int(sys.argv[3])
+    if NELEC%2==0:
+        NELECa=NELEC/2
+        NELECb=NELEC/2
+    else:
+        NELECa=(NELEC+1)/2
+        NELECb=(NELEC-1)/2
+    NELECa=int(NELECa)
+    NELECb=int(NELECb)
+    E_old=0
+    iters=1
+    print('NORB=',NORB,'NELECa=',NELECa,'NELECb=',NELECb,'E_nucc=',E_nucc)
+    print('test')
+    Pa=numpy.load('Pa.mat.npy')
+    Pb=numpy.load('Pb.mat.npy')
+    #Pa=numpy.zeros((NORB,NORB))
+    #Pb=numpy.zeros((NORB,NORB))
+    #for a in range(NELECa):
+    #    Pa[a,a]=1
+    #for b in range(NELECb):
+    #    Pb[b,b]=1
+    Pt=numpy.add(Pa,Pb)
+    
+    diis=diis_class(NORB)
+    dodiis=int(sys.argv[2])
+
+    while True:
+        #P->G
+        print(len(Pa),len(twomatrix))
+        Ga=numpy.tensordot(Pa,twomatrix,((0,1),(1,2)))
+        Gb=numpy.tensordot(Pb,twomatrix,((0,1),(1,2)))
+        Gt=numpy.tensordot(Pt,twomatrix,((0,1),(3,2)))
+    
+        #G->F
+        Fa=numpy.subtract(numpy.add(H,Gt),Ga)
+        Fb=numpy.subtract(numpy.add(H,Gt),Gb)
+
+        #energy
+        E=0.5*(numpy.tensordot(Pt,H,((0,1),(1,0)))+numpy.tensordot(Pa,Fa,((0,1),(1,0)))+numpy.tensordot(Pb,Fb,((0,1),(1,0))))+E_nucc
+
+        #CDISS
+        if dodiis == 1:
+            Fa,Fb=diis.diis_func(Fa,Fb,Pa,Pb,E,iters)
+
+        #F->C
+        valsa, Ca = numpy.linalg.eig(Fa)
+        idx = valsa.argsort()[::1]
+        valsa=valsa[idx]
+        Ca=Ca[:,idx]
+    
+        valsb, Cb = numpy.linalg.eig(Fb)
+        idx = valsb.argsort()[::1]
+        valsb=valsb[idx]
+        Cb=Cb[:,idx]
+    
+        #C->P
+        Pa=numpy.matmul(Ca[:,:NELECa],numpy.transpose(Ca[:,:NELECa]))
+        Pb=numpy.matmul(Cb[:,:NELECb],numpy.transpose(Cb[:,:NELECb]))
+        Pt=numpy.add(Pa,Pb)
+
+    
+        #loopcontrol
+        print('iters',iters,'Energy',E)
+        if abs(E-E_old)<10**-7: break
+        if iters > 1000:
+            print('not converged after', iters ,'iterations')
+            break
+        E_old=E
+        iters+=1
+    
+    #numpy.save('Pa.mat',Pa)
+    #numpy.save('Pb.mat',Pb)
+    print('finished calculation')
+    #fcimaker(NORB, Ca, Cb, twomatrix,H,nml)
+    print('skipped newFCIDUMP')
+    print('Done')
+
+class diis_class:
+    def __init__(self,NORB):
+        self.diisiters=0
+        self.maxdiis=5
+        self.diis_error_matrices= numpy.zeros((self.maxdiis, NORB, NORB))
+        self.diis_focka_matrices= numpy.zeros_like(self.diis_error_matrices)
+        self.diis_fockb_matrices= numpy.zeros_like(self.diis_error_matrices)
+        self.diis_energy = numpy.zeros((self.maxdiis))
+
+    def diis_func(self,focka,fockb, densa, densb, energy, iters):
+        """ Extrapolate new fock matrixes based on input fock matrixes
+            and previous fock-matrices.
+            Arguments:
+            focka -- current fock matrix alpha
+            fockb -- current fock matrix beta
+            Returns:
+            (focka, fockb) -- interpolated fock matrixes
+        """
+        diis_focka = numpy.zeros_like(focka)
+        diis_fockb = numpy.zeros_like(fockb)
+    
+        # copy data down to lower storage
+        for k in reversed(range(1, min(iters, self.maxdiis))):
+            self.diis_error_matrices[k] = self.diis_error_matrices[k-1][:]
+            self.diis_focka_matrices[k] = self.diis_focka_matrices[k-1][:]
+            self.diis_fockb_matrices[k] = self.diis_fockb_matrices[k-1][:]
+            self.diis_energy[k] = self.diis_energy[k-1]
+    
+        # calculate error matrixes and add them to one
+        error_mata  = numpy.dot(focka, densa)
+        error_mata -= error_mata.T
+        error_matb  = numpy.dot(fockb, densb)
+        error_matb -= error_matb.T
+        error_mat = numpy.add(error_mata,error_matb)
+
+        # put data in storage
+        self.diis_error_matrices[0]  = error_mat
+        self.diis_focka_matrices[0] = focka[:]
+        self.diis_fockb_matrices[0] = fockb[:]
+        self.diis_energy[0] = energy
+
+        #check for EDIIS or CDIIS
+        e_max=error_mat.max()
+        e_min=error_mat.min()
+        if e_max < 10**-6 and e_min > -10**-6 :
+            print('noDIIS')
+            return focka, fockb
+        if e_max > 0.01 or e_min < -0.01 :
+            print('EDIIS')
+            # calculate B-matrix
+            bsize = min(iters, self.maxdiis)
+            bmat = 1.0*numpy.ones((bsize+1,bsize+1))
+            bmat[bsize, bsize] = 0
+            for b1 in range(bsize):
+                for b2 in range(bsize):
+                    bmat[b1, b2] = numpy.trace(self.diis_error_matrices[b1].dot(self.diis_error_matrices[b2]))
+            rhs = numpy.zeros(bsize+1)
+            rhs[bsize] = 1
+            for a in range(bsize):
+                rhs[a]=self.diis_energy[a]
+            while True:
+                #solve
+                C =  numpy.linalg.solve(bmat, rhs)
+                if C[:-1].min() < 0:
+                    i = numpy.argmin(C)
+                    bmat=numpy.delete(bmat,i,0)
+                    bmat=numpy.delete(bmat,i,1)
+                    rhs=numpy.delete(rhs,i,0)
+                    if len(rhs)==2:
+                        print('found no EDIIS')
+                        return focka, fockb
+                    continue
+                break
+
+            # form new interpolated diis fock matrixes with non0 C_i
+            for i, k in enumerate(C[:-1]):
+                diis_focka += k*self.diis_focka_matrices[i]
+                diis_fockb += k*self.diis_fockb_matrices[i]
+
+            return diis_focka,diis_fockb
+        else:
+            print('CDIIS')
+            self.diisiters+=1
+    
+            # calculate B-matrix
+            bsize = min(self.diisiters, self.maxdiis)
+            bmat = -1.0*numpy.ones((bsize+1,bsize+1))
+            rhs = numpy.zeros(bsize+1)
+            bmat[bsize, bsize] = 0
+            rhs[bsize] = -1
+            for b1 in range(bsize):
+                for b2 in range(bsize):
+                    bmat[b1, b2] = numpy.trace(self.diis_error_matrices[b1].dot(self.diis_error_matrices[b2]))
+            C =  numpy.linalg.solve(bmat, rhs)
+
+            # form new interpolated diis fock matrixes
+            for i, k in enumerate(C[:-1]):
+                diis_focka += k*self.diis_focka_matrices[i]
+                diis_fockb += k*self.diis_fockb_matrices[i]
+
+            return diis_focka,diis_fockb
+
+def fcimaker(NORB, Ca, Cb, twomatrix,H,nml):
+    MO_a=numpy.tensordot(Ca,numpy.tensordot(Ca,numpy.tensordot(Ca,numpy.tensordot(Ca,twomatrix,((0),(3))),((0),(2))),((0),(1))),((0),(0)))
+    MO_b=numpy.tensordot(Cb,numpy.tensordot(Cb,numpy.tensordot(Cb,numpy.tensordot(Cb,twomatrix,((0),(3))),((0),(2))),((0),(1))),((0),(0)))
+    H_MO=numpy.tensordot(Cb,numpy.tensordot(Cb,H,((0),(1))),((0),(0)))+numpy.tensordot(Cb,numpy.tensordot(Cb,H,((0),(1))),((0),(0)))
+    fcidump = open(sys.argv[2], 'w')
+    nml.write(fcidump)
+    for I in range(1, NORB + 1):
+        for J in range(1, I + 1):
+            for K in range(1, I + 1):
+                for L in range(1, K + 1):
+                    if(I == K and J < L):
+                            continue
+                    fcidump.write('{0:23.16E} {1:4d} {2:4d} {3:4d} {4:4d}'.format(MO_a[I-1,J-1,K-1,L-1], I, J, K, L))
+                    fcidump.write('\n')
+    fcidump.write('{0:23.16E} {1:4d} {2:4d} {3:4d} {4:4d}'.format(0000000000000000, 0, 0, 0, 0))
+    fcidump.write('\n')
+    for I in range(1, NORB + 1):
+        for J in range(1, I + 1):
+            for K in range(1, I + 1):
+                for L in range(1, K + 1):
+                    if(I == K and J < L):
+                            continue
+                    fcidump.write('{0:23.16E} {1:4d} {2:4d} {3:4d} {4:4d}'.format(MO_b[I-1,J-1,K-1,L-1], I, J, K, L))
+                    fcidump.write('\n')
+    for I in range(1, NORB + 1):
+        for J in range(1, I + 1):
+            fcidump.write('{0:23.16E} {1:4d} {2:4d} {3:4d} {4:4d}'.format(H_MO[I-1,J-1], I, J, 0, 0))
+            fcidump.write('\n')
+    fcidump.write('{0:23.16E} {1:4d} {1:4d} {1:4d} {1:4d}'.format(E_nucc,0))
+    fcidump.close()
+    return
+
+def init():
+    with open(sys.argv[1],'r') as f:
+        print('input=',sys.argv[1])
+        with open('tmpnml.tmp','w')as g:
+            #find and copy nml
+            while True:
+                line = f.readline()
+                g.write(line)
+                if line.find('&END') != -1:
+                    break
+                if line.find(r'/') != -1:
+                    break
+
+        with open('tmpnml.tmp') as g:
+            #read the nml
+            nml = f90nml.read(g)
+            NORB = nml['fci']['NORB']
+            NELEC = nml['fci']['NELEC']
+        os.remove('tmpnml.tmp')
+
+
+        H = numpy.zeros((NORB, NORB))
+        twomatrix = numpy.zeros((NORB, NORB, NORB, NORB))
+        while True:
+            line=f.readline()
+            if line == '':break
+            integral = numpy.float64(line.split()[0])
+            my = int(line.split()[1])-1
+            ny = int(line.split()[2])-1
+            la = int(line.split()[3])-1
+            si = int(line.split()[4])-1
+            if my == ny == la == si == -1:
+                E_nucc = integral
+            if la == si == -1 and my != -1 and ny != -1:
+                H[my,ny] = integral
+                H[ny,my] = integral
+            elif my != -1 and ny != -1 and la != -1 and si != -1 :
+                twomatrix[my, ny, la, si] = integral
+                twomatrix[ny, my, la, si] = integral
+                twomatrix[my, ny, si, la] = integral
+                twomatrix[ny, my, si, la] = integral
+                twomatrix[la, si, my, ny] = integral
+                twomatrix[si, la, my, ny] = integral
+                twomatrix[la, si, ny, my] = integral
+                twomatrix[si, la, ny, my] = integral
+    return(NORB, NELEC, E_nucc, H, twomatrix, nml)
+
+def outsqr(title, mat, width=15):
+        frmt = ''.join(['{: > ', str(width), '.', str(max(width - 7, 0)),
+                        'f}'])
+        ifrmt = ''.join(['{:^', str(width), 'd}'])
+        headline = ''.join([ifrmt.format(i) for i in range(len(mat) + 1)])
+        outline = '\n'.join([''.join([ifrmt.format(i + 1),
+                            ''.join([frmt.format(val) for val in row])]) for i,
+                            row in enumerate(mat)])
+        print('\n'.join([title, headline, outline]))
+
+if __name__ == '__main__':
+    main()

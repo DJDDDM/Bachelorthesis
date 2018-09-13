@@ -1,0 +1,5 @@
+to use the somehow finished python programms
+1. create a FCIDUMP (Molpro or Cryscor reccomended)
+2. use this FCIDUMP as input
+
+RHF contains MP2, MP3 and CCD

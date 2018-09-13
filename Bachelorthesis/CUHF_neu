@@ -1,0 +1,192 @@
+#!/usr/bin/python3
+import numpy
+import sys
+import f90nml
+import os
+
+def main():
+    global NORB, NELEC, E_nucc
+    print('started program')
+    NORB, NELEC, E_nucc, H, twomatrix, nml = init()
+    NELEC+=int(sys.argv[3])
+    if NELEC%2==0:
+        NELECa=NELEC/2
+        NELECb=NELEC/2
+    else:
+        NELECa=(NELEC+1)/2
+        NELECb=(NELEC-1)/2
+    NELECa=int(NELECa)
+    NELECb=int(NELECb)
+    E_old=0
+    iters=1
+    print('finished init')
+    print('NORB=',NORB,'NELECa=',NELECa,'NELECb=',NELECb,'E_nucc=',E_nucc)
+    Pa=numpy.zeros((NORB,NORB))
+    Pb=numpy.zeros((NORB,NORB))
+    for a in range(NELECa):
+        Pa[a,a]=1
+    for b in range(NELECb):
+        Pb[b,b]=1
+    Pt=numpy.add(Pa,Pb)
+
+    while True:
+        #P->G
+        Ga=numpy.tensordot(Pa,twomatrix,((0,1),(1,2)))
+        Gb=numpy.tensordot(Pb,twomatrix,((0,1),(1,2)))
+        Gt=numpy.tensordot(Pt,twomatrix,((0,1),(3,2)))
+        ME=(Ga-Gb)/2
+    
+        #G->F
+        Fa=numpy.subtract(numpy.add(H,Gt),Ga)
+        Fb=numpy.subtract(numpy.add(H,Gt),Gb)
+
+        #F_UHF -> F_CUHF
+        Dela=Fa+ME
+        Delb=Fb-ME
+        Fa[:NELECb,NELECa:]=Dela[:NELECb,NELECa:]
+        Fa[NELECa:,:NELECb]=Dela[NELECa:,:NELECb]
+        Fb[:NELECb,NELECa:]=Delb[:NELECb,NELECa:]
+        Fb[NELECa:,:NELECb]=Delb[NELECa:,:NELECb]
+    
+        #F->C
+        valsa, Ca = numpy.linalg.eig(Fa)
+        idx = valsa.argsort()[::1]
+        valsa=valsa[idx]
+        Ca=Ca[:,idx]
+    
+        valsb, Cb = numpy.linalg.eig(Fb)
+        idx = valsb.argsort()[::1]
+        valsb=valsb[idx]
+        Cb=Cb[:,idx]
+    
+        #energy
+        DelE=0
+        for i in range (NELECb):
+            for j in range (NELECa,NORB):
+                DelE+=ME[i,j]*(Pa[i,j]-Pb[i,j])
+                DelE+=ME[j,i]*(Pa[j,i]-Pb[j,i])
+        UHFE=numpy.tensordot(Pt,H,((0,1),(0,1)))+0.5*numpy.tensordot((Gt-0.5*(Ga+Gb)),Pt,((0,1),(0,1)))-0.5*numpy.tensordot(ME,(Pa-Pb),((0,1),(0,1)))
+        #E=0.5*(numpy.tensordot(Pt,H,((0,1),(1,0)))+numpy.tensordot(Pa,Fa,((0,1),(1,0)))+numpy.tensordot(Pb,Fb,((0,1),(1,0))))+E_nucc+DelE
+        E=UHFE+DelE+E_nucc
+
+        #C->P
+        Pa=numpy.matmul(Ca[:,:NELECa],numpy.transpose(Ca[:,:NELECa]))
+        Pb=numpy.matmul(Cb[:,:NELECb],numpy.transpose(Cb[:,:NELECb]))
+        Pt=numpy.add(Pa,Pb)
+    
+        #loopcontrol
+        print('iters',iters,'Energy',E, 'DelE=',DelE)
+        if abs(E-E_old)<10**-7: break
+        if iters > 50:
+            print('not converged after', iters ,'iterations')
+            break
+        E_old=E
+        iters+=1
+    
+    print('finished calculation')
+    #fcimaker(NORB, Ca, Cb, twomatrix,H,nml)
+    print('skipped newFCIDUMP')
+    print('Done')
+
+
+def fcimaker(NORB, Ca, Cb, twomatrix,H,nml):
+    MO_a=numpy.tensordot(Ca,numpy.tensordot(Ca,numpy.tensordot(Ca,numpy.tensordot(Ca,twomatrix,((0),(3))),((0),(2))),((0),(1))),((0),(0)))
+    MO_b=numpy.tensordot(Cb,numpy.tensordot(Cb,numpy.tensordot(Cb,numpy.tensordot(Cb,twomatrix,((0),(3))),((0),(2))),((0),(1))),((0),(0)))
+    H_MO=numpy.tensordot(Cb,numpy.tensordot(Cb,H,((0),(1))),((0),(0)))+numpy.tensordot(Cb,numpy.tensordot(Cb,H,((0),(1))),((0),(0)))
+    fcidump = open(sys.argv[2], 'w')
+    nml.write(fcidump)
+    for I in range(1, NORB + 1):
+        for J in range(1, I + 1):
+            for K in range(1, I + 1):
+                for L in range(1, K + 1):
+                    if(I == K and J < L):
+                            continue
+                    fcidump.write('{0:23.16E} {1:4d} {2:4d} {3:4d} {4:4d}'.format(MO_a[I-1,J-1,K-1,L-1], I, J, K, L))
+                    fcidump.write('\n')
+    fcidump.write('{0:23.16E} {1:4d} {2:4d} {3:4d} {4:4d}'.format(0000000000000000, 0, 0, 0, 0))
+    fcidump.write('\n')
+    for I in range(1, NORB + 1):
+        for J in range(1, I + 1):
+            for K in range(1, I + 1):
+                for L in range(1, K + 1):
+                    if(I == K and J < L):
+                            continue
+                    fcidump.write('{0:23.16E} {1:4d} {2:4d} {3:4d} {4:4d}'.format(MO_b[I-1,J-1,K-1,L-1], I, J, K, L))
+                    fcidump.write('\n')
+    for I in range(1, NORB + 1):
+        for J in range(1, I + 1):
+            fcidump.write('{0:23.16E} {1:4d} {2:4d} {3:4d} {4:4d}'.format(H_MO[I-1,J-1], I, J, 0, 0))
+            fcidump.write('\n')
+    fcidump.write('{0:23.16E} {1:4d} {1:4d} {1:4d} {1:4d}'.format(E_nucc,0))
+    fcidump.close()
+    return
+
+def init():
+    print('in init')
+    with open(sys.argv[1],'r') as f:
+        with open('tmpnml.tmp','w')as g:
+            number=2
+            #find and copy nml
+            while True:
+                number += 1
+                print(number)
+                line = f.readline()
+                g.write(line)
+                print(line)
+                if line.find('&END') != -1:
+                    print('found the Namelist')
+                    break
+                if line.find(r'/') != -1:
+                    print('found the Namelist')
+                    break
+
+        with open('tmpnml.tmp') as g:
+            #read the nml
+            nml = f90nml.read(g)
+            NORB = nml['fci']['NORB']
+            NELEC = nml['fci']['NELEC']
+            print('NORB=',NORB)
+            print('read the namelist')
+        os.remove('tmpnml.tmp')
+
+
+        H = numpy.zeros((NORB, NORB))
+        twomatrix = numpy.zeros((NORB, NORB, NORB, NORB))
+        while True:
+            line=f.readline()
+            if line == '':break
+            integral = numpy.float64(line.split()[0])
+            my = int(line.split()[1])-1
+            ny = int(line.split()[2])-1
+            la = int(line.split()[3])-1
+            si = int(line.split()[4])-1
+            if my == ny == la == si == -1:
+                E_nucc = integral
+                print('found E_nucc')
+            if la == si == -1 and my != -1 and ny != -1:
+                H[my,ny] = integral
+                H[ny,my] = integral
+            elif my != -1 and ny != -1 and la != -1 and si != -1 :
+                twomatrix[my, ny, la, si] = integral
+                twomatrix[ny, my, la, si] = integral
+                twomatrix[my, ny, si, la] = integral
+                twomatrix[ny, my, si, la] = integral
+                twomatrix[la, si, my, ny] = integral
+                twomatrix[si, la, my, ny] = integral
+                twomatrix[la, si, ny, my] = integral
+                twomatrix[si, la, ny, my] = integral
+        print('finished init')
+    return(NORB, NELEC, E_nucc, H, twomatrix, nml)
+
+def outsqr(title, mat, width=15):
+        frmt = ''.join(['{: > ', str(width), '.', str(max(width - 7, 0)),
+                        'f}'])
+        ifrmt = ''.join(['{:^', str(width), 'd}'])
+        headline = ''.join([ifrmt.format(i) for i in range(len(mat) + 1)])
+        outline = '\n'.join([''.join([ifrmt.format(i + 1),
+                            ''.join([frmt.format(val) for val in row])]) for i,
+                            row in enumerate(mat)])
+        print('\n'.join([title, headline, outline]))
+
+if __name__ == '__main__':
+    main()
