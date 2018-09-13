@@ -1,9 +1,11 @@
 #!/opt/julia/0.6.4/bin/julia
+using Combinatorics
+using Iterators
 
 NORB = 6
-NELEC = 4
+NOCC = 4
 global NORB
-global NELEC
+global NOCC
 
 
 
@@ -16,35 +18,76 @@ onematrix = rand(1:10,5,5)
 Gmatrix = rand(1:10,5,5,5,5)
 println(A,B)
 
-function sc_exitationgenerator(Nex)
+sc_exitationgenerator(A,2)
 
-    A = collect(1:NORB)
-    B = collect(1:NELEC)
-    C = copy(B)
-    D = copy(C)
-    println(C)
-    for i = 1:NELEC, j = NELEC+1:NORB
-            C[i] = A[j]
-            println(C)
+function sc_exitationgenerator(A,Nex)
+    occ = collect(combinations(1:NOCC,Nex)
+    virt = collect(combinations(NOCC+1:NORB, Nex)
+    excited = collect(Iterators.product(occ,virt))
 
-            for k = 1:NELEC
-                if k == i
-                    continue
-                end
-                for l = NELEC+1:NORB
-                    if l == j
-                        continue
-                    end
-                    D[k] = A[l]
-                    println(D)
-                    D = copy(C)
-                end
-            end
-            C = copy(B)
-        end
+    for i in excited
+        println(excited)
     end
+end
 
-sc_exitationgenerator(1)
+
+
+
+
+
+#function sc_exitationgenerator(Nex)
+#
+#    A = collect(1:NORB)
+#    B = collect(1:NELEC)
+#    C = copy(B)
+#    D = copy(C)
+#    println(C)
+#    for i = 1:NELEC, j = NELEC+1:NORB
+#            C[i] = A[j]
+#            println(C)
+#
+#            for k = 1:NELEC
+#                if k == i
+#                    continue
+#                end
+#                for l = NELEC+1:NORB
+#                    if l == j
+#                        continue
+#                    end
+#                    D[k] = A[l]
+#                    println(D)
+#                    D = copy(C)
+#                end
+#            end
+#            C = copy(B)
+#        end
+#    end
+#
+#
+#A = collect(1:NORB)
+#B = collect(1:NELEC)
+#C = copy(B)
+#D = copy(A)
+#
+#j = NELEC+1
+#i = 1
+#
+#while true
+#    if D[j] != 0 && C[i] <= NELEC
+#        C[i] = D[j]
+#        D[j] = 0
+#        counter += 1
+#        if counter == Nex
+#            println(C[i])
+#            C = copy(B)
+#            D = copy(A)
+#            break
+#        end
+#    end
+#end
+#
+#
+#sc_exitationgenerator(1)
 
 function sc_sort(A)
     counter = 0
