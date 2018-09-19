@@ -1,168 +1,138 @@
-#!/opt/julia/0.6.4/bin/julia
+#!/opt/julia/1.0.0/bin/julia
 using Combinatorics
-using Iterators
+using IterTools
 
 NORB = 6
 NOCC = 4
+NVIRT = NORB - NOCC
+global NVIRT
 global NORB
 global NOCC
 
-
-
-
-
 A = [1,5,3,4]
-A = collect(1:NELEC)
+A = collect(1:NOCC)
 B = [1,2,3,4]
 onematrix = rand(1:10,5,5)
 Gmatrix = rand(1:10,5,5,5,5)
 println(A,B)
 
-sc_exitationgenerator(A,2)
 
-function sc_exitationgenerator(A,Nex)
-    occ = collect(combinations(1:NOCC,Nex)
-    virt = collect(combinations(NOCC+1:NORB, Nex)
-    excited = collect(Iterators.product(occ,virt))
-
-    for i in excited
-        println(excited)
-    end
+function sc_exitationgenerator(Nex)
+    occ = collect(combinations(1:NOCC,Nex))
+    virt = collect(combinations(NOCC+1 : NORB, Nex))
+    excited = collect(IterTools.product(occ,virt))
+return excited
 end
 
 
+A = sc_exitationgenerator(2)
 
-
-
-
-#function sc_exitationgenerator(Nex)
-#
-#    A = collect(1:NORB)
-#    B = collect(1:NELEC)
-#    C = copy(B)
-#    D = copy(C)
-#    println(C)
-#    for i = 1:NELEC, j = NELEC+1:NORB
-#            C[i] = A[j]
-#            println(C)
-#
-#            for k = 1:NELEC
-#                if k == i
-#                    continue
-#                end
-#                for l = NELEC+1:NORB
-#                    if l == j
-#                        continue
-#                    end
-#                    D[k] = A[l]
-#                    println(D)
-#                    D = copy(C)
-#                end
-#            end
-#            C = copy(B)
-#        end
-#    end
-#
-#
-#A = collect(1:NORB)
-#B = collect(1:NELEC)
-#C = copy(B)
-#D = copy(A)
-#
-#j = NELEC+1
-#i = 1
-#
-#while true
-#    if D[j] != 0 && C[i] <= NELEC
-#        C[i] = D[j]
-#        D[j] = 0
-#        counter += 1
-#        if counter == Nex
-#            println(C[i])
-#            C = copy(B)
-#            D = copy(A)
-#            break
-#        end
-#    end
-#end
-#
-#
-#sc_exitationgenerator(1)
-
-function sc_sort(A)
-    counter = 0
-    i = 1
-    while i <= length(A)
-        j = i
-        while j > 1 && A[j-1] > A[j]
-            A[j], A[j-1] = A[j-1], A[j]
-            j -= 1
-            counter += 1
-        end
-        i = i+1
-    end
-    return A, counter
-end
-
-A, a = sc_sort(A)
-B, b = sc_sort(B)
-if (a + b) % 2 == 0
-    prefactor = 1
-else
-    prefactor = -1
-end
-
-println(A,B,prefactor)
-
-function sc_compare(A,B)
-
+function sc_difference(A,B)
     counter = 0
     C = [0 0; 0 0]
+    D = [0 0; 0 0]
+    prefactor = 0
+
     i = 1
     j = 1
-    while i <= length(A) && j <= length(B)
-        if A[i] == B[j] 
-            i += 1
-            j += 1
-        elseif A[i] < B[j]
-            counter += 1
-            if counter > 2
+    for i = 1:length(A[1])
+        while true
+            if A[1][i] == B[1][j]
                 break
             end
-            C[1,counter] = A[i]
-            i +=1
-        elseif A[i] > B[j]
-            counter += 1
-            if counter > 2
+            if j == length(B[1])
+                counter += 1
+                if counter == 3
+                    break
+                end
+                C[1,counter] = A[1][i]
+                C[2,counter] = B[1][j]
+                D[1,counter] = A[1][i]
+                D[2,counter] = B[1][j]
                 break
             end
-            C[2,counter] = B[j]
             j += 1
+        end
+        j = 1
+        if counter == 3
+            break
         end
     end
 
-    if counter < 3
-        for i = 1:counter
-            if C[1,i] == 0
-                C[1,i] = A[end]
+    if counter == 3
+        return C, counter
+    end
+
+    i = 1
+    j = 1
+    for i = 1:length(A[2])
+        while true
+            if A[2][i] == B[2][j]
+                break
             end
-            if C[2,i] == 0
-                C[2,i] = B[end]
+            if j == length(B[2])
+                counter += 1
+                if counter == 3
+                    break
+                end
+                C[1,counter] = A[2][i]
+                C[2,counter] = B[2][j]
+                D[1,counter] = A[1][i]
+                D[2,counter] = B[1][j]
+                break
             end
+            j += 1
+        end
+        j = 1
+        if counter == 3
+            break
         end
     end
 
-return counter,C
+    if counter == 0
+        prefactor = 1
+    elseif counter == 1
+        i = D[1,1] - 1 + D[2,1] - 1
+        i = i%2 
+        if i == 0
+            prefactor = 1
+        elseif i == 1
+            prefactor = -1
+        end
+    elseif counter == 2
+        i = D[1,1] - 1 + D[2,1] -1 + D[1,2] - 2 + D[2,2] - 2
+        i = i%2
+        if i == 0
+            prefactor = 1
+        elseif i == 1
+            prefactor = -1
+        end
+    end
+            
+    return C, counter, prefactor
 end
 
-counter,C = sc_compare(A,B)
-println(counter,C) 
+
+
+
+C, counter, prefactor = sc_difference(A[1],A[2])
+println(A[1],A[2])
+println(C, counter,"pre=",prefactor)
+
+
+onematrix = rand(1:10,NORB,NORB)
+twomatrix = rand(1:10,NORB,NORB,NORB,NORB)
 
 function sc_oneoperator(counter,C,A,onematrix)
 
-    value = 0
     if counter == 0
-        for i in A
+        value = 0
+        j = 1
+        for i = 1:NOCC
+            if j <= length(A[1]) && i == A[1][j]
+                i = A[2][j]
+                j += 1
+            end
             value += onematrix[i,i]
         end
     elseif counter == 1
@@ -172,17 +142,41 @@ function sc_oneoperator(counter,C,A,onematrix)
     end
 return value
 end
-        
+
+value = sc_oneoperator(counter,C,A[1],onematrix)
+println(onematrix)
+println(value)
+
+
 function sc_twooperator(counter,C,A,Gmatrix)
 
-    value = 0
     if counter == 0
-        for i in A, j in A
-            value += Gmatrix[i,i,j,j]
+        k = 1
+        l = 1
+        value = 0
+        for i = 1:NOCC
+            for j = 1:NOCC
+                if k <= length(A[1]) && i == A[1][k]
+                    i = A[2][k]
+                    k += 1
+                end
+                if l <= length(A[1]) && j == A[1][l]
+                    j = A[2][l]
+                    l +=1
+                end
+                value += Gmatrix[i,i,j,j]
+            end
+            l = 1
         end
         value = 0.5 * value
     elseif counter == 1
-        for i in A
+        value = 0
+        k = 1
+        for i = 1:NOCC
+            if k <= length(A[1]) && i == A[1][k] 
+                i = A[2][k]
+                k += 1
+            end
             value += Gmatrix[C[1,1],C[2,1],i,i]
         end
     elseif counter == 2
@@ -193,10 +187,77 @@ function sc_twooperator(counter,C,A,Gmatrix)
 return value
 end
 
+function sc_onegen(onematrix,A,B)
+    C, Counter, Prefactor = sc_difference(A,B)
+    value = Prefactor * sc_oneoperator(Counter,C,A,onematrix)
+    return value
+end
+
+function sc_twogen(twomatrix,A,B)
+    C, Counter, Prefactor = sc_difference(A,B)
+    value = Prefactor * sc_twooperator(Counter,C,A,twomatrix)
+    return value
+end
+
+function sc_Hgen(onematrix,twomatrix,A,B)
+    return sc_onegen(onematrix,A,B) + 0.5 * sc_twogen(twomatrix,A,B)
+end
 
 
 
 
 
+value = sc_twooperator(counter,C,A[1],twomatrix)
+println(value)
+println(prefactor*value)
 
+function CID(onematrix,twomatrix)
+E_0 = 1.5
+E_old = 0.0
+E = 0.0
+iters = 1
+println("onematrix=",onematrix)
 
+C_old = zeros(NORB,NORB,NORB,NORB)
+C_neu = copy(C_old)
+
+while true
+    #E_corr
+    E_corr = 0
+    for d = 1:NOCC, c = 1:d, u = NOCC+1:NORB, t = NOCC+1:u
+        E_corr += C_neu[c,d,t,u] * twomatrix[c,d,t,u]
+    end
+    E_corr = E_corr / 2
+    E = E_0 - E_corr
+    println("CID Energy = ",E)
+    
+    #C_neu
+    for b = 1:NOCC, a = 1:b, s = NOCC+1:NORB, r = NOCC+1:s
+        A = [a b; r s]
+        value = 0
+        for d = 1:NOCC, c = 1:d, u = NOCC+1:NORB, t = NOCC+1:u
+            if d == b && c == a && u == s && t == r
+                continue
+            end
+            B = [c d; t u]
+            value += C_old[c,d,t,u] * sc_Hgen(onematrix, twomatrix, A, B)
+        end
+        C_neu[a,b,r,s] = -1 * (twomatrix[r,s,a,b] + value) / (sc_Hgen(onematrix, twomatrix, A, A) - E)
+    end
+    
+    #Loop-control
+    if abs(E-E_old) < 10.0^-7
+        println("CID converged after",iters,"iterations with energy", E)
+        break
+    end
+    if iters > 1000
+        break
+    end
+    E_old = E
+    iters += 1
+    C_old= copy(C_neu)
+end
+println("E= ",E)
+end
+
+CID(onematrix,twomatrix)

@@ -1,25 +1,34 @@
-#!/opt/julia/0.6.4/bin/julia 
+#!/opt/julia/1.0.0/bin/julia 
 using Compat
 using TensorToolbox
 using TensorOperations
 using PyCall
+using Combinatorics
+using IterTools
+using LinearAlgebra
 @pyimport f90nml
-using TensorOperations
 
 function main()
     two, H, E_nucc, NORB, NELEC = FCIread()
     println("E_nucc= ",E_nucc," NORB= ",NORB," NELEC= ",NELEC)
     NOCC = convert(Int,NELEC/2)
+    global NORB
+    global NOCC
+    global NVIRT
+    NVIRT = NORB-NOCC
     E_RHF,vals, C = RHF(two,H,E_nucc,NORB,NOCC)
     @time RHF(two,H,E_nucc,NORB,NOCC)
 
     twoMO = transformtwo(C,two)
+    HMO = transformone(C,H)
     println("transform")
     @time transformtwo(C,two)
 
     E_MP2 = MP2(twoMO,vals,NOCC,NORB)
     println("E_MP2=",E_MP2)
+    println("E_RHF+E_MP2= ",E_RHF + E_MP2)
     @time MP2(two,vals,NOCC,NORB)
+
 end
 
 function FCIread()
@@ -29,7 +38,7 @@ function FCIread()
                 line = readline(file)
                 write(nml,line)
                 write(nml,"\n")
-                if contains(line,"&END") || contains(line,"/")
+                if occursin("&END",line) || occursin("/",line)
                     break
                 end
             end
@@ -94,9 +103,9 @@ function RHF(two,H,E_nucc,NORB,NOCC)
     F -= tensorcontract(two,["my","la","si","ny"],P,["la","si"])
     
     #F -> C
-    eig = eigfact(F)
-    C = eig[:vectors]
-    vals = eig[:values]
+    eig = LinearAlgebra.eigen(F)
+    C = eig.vectors
+    vals = eig.values
     idx = sortperm(vals)
     vals = vals[idx]
     C = C[:,idx]
@@ -120,10 +129,17 @@ return E, vals, C
 end
 
 function transformtwo(C,twoAO)
-    twoAO = hosvd(twoAO,eps_abs=100)
-    println(ttm(twoAO,C))
-    @tensoropt twoMO[i,j,k,l] := twoAO[my,ny,la,si]*C'[my,i]*C'[ny,j]*C[la,k]*C[si,l]
+    @tensor begin
+    twoMO[i,j,k,l] := C[i,my]*C[j,ny]*twoAO[my,ny,la,si]*C[la,k]*C[si,l]
+    end
     return twoMO
+end
+
+function transformone(C,oneAO)
+    @tensor begin
+    oneMO[i,j] := C[i,my]*oneAO[my,ny]*C[ny,j]
+    end
+    return oneMO
 end
 
 
@@ -135,33 +151,3 @@ end
 return E
 end
 
-#function DCI()
-#    E_DCI = 0
-#    while true
-#        B =  
-#        for r = NOCC+1:NORB, a = 1:NOCC, s = NOCC+1:NORB, b = 1:NOCC
-#            B[r,a,s,b] = 2*two[r,a,s,b]-two[r,b,s,a]
-#        end
-#        D = 
-#        M =
-#        E_DCI = -B'inv(M)B
-#    end
-#end
-#
-#function Det_func()
-#   Det = [1:NOCC]
-#end
-#   
-#function compare(Det1,Det2)
-#    for i = 1,NOCC
-#        if Det1[i]
-    
-
-
-
-
-
-
-
-main()
-@time main()
