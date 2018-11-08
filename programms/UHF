@@ -19,15 +19,12 @@ def main():
     E_old=0
     iters=1
     print('NORB=',NORB,'NELECa=',NELECa,'NELECb=',NELECb,'E_nucc=',E_nucc)
-    print('test')
-    Pa=numpy.load('Pa.mat.npy')
-    Pb=numpy.load('Pb.mat.npy')
-    #Pa=numpy.zeros((NORB,NORB))
-    #Pb=numpy.zeros((NORB,NORB))
-    #for a in range(NELECa):
-    #    Pa[a,a]=1
-    #for b in range(NELECb):
-    #    Pb[b,b]=1
+    Pa=numpy.zeros((NORB,NORB))
+    Pb=numpy.zeros((NORB,NORB))
+    for a in range(NELECa):
+        Pa[a,a]=1
+    for b in range(NELECb):
+        Pb[b,b]=1
     Pt=numpy.add(Pa,Pb)
     
     diis=diis_class(NORB)
@@ -35,7 +32,6 @@ def main():
 
     while True:
         #P->G
-        print(len(Pa),len(twomatrix))
         Ga=numpy.tensordot(Pa,twomatrix,((0,1),(1,2)))
         Gb=numpy.tensordot(Pb,twomatrix,((0,1),(1,2)))
         Gt=numpy.tensordot(Pt,twomatrix,((0,1),(3,2)))
@@ -66,7 +62,6 @@ def main():
         Pa=numpy.matmul(Ca[:,:NELECa],numpy.transpose(Ca[:,:NELECa]))
         Pb=numpy.matmul(Cb[:,:NELECb],numpy.transpose(Cb[:,:NELECb]))
         Pt=numpy.add(Pa,Pb)
-
     
         #loopcontrol
         print('iters',iters,'Energy',E)

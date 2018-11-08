@@ -22,14 +22,16 @@ def main():
     RHF_dic = RHF().RHF_main(AO_twomatrix,AO_H)
     print('Done RHF','RHF_E=', RHF_dic['RHF_E'] )
 
-    ##Transformation
-    #MO_F = numpy.matmul(numpy.matmul(RHF_dic['RHF_C'].T,RHF_dic['RHF_F']),RHF_dic['RHF_C'])
-    #MO_twomatrix = twomatrix_transform(AO_twomatrix,RHF_dic['RHF_C'])
+    outsqr("C",RHF_dic['RHF_C'])
 
-    ###MP2
-    #E_MP2=MP2(MO_twomatrix,MO_F)
-    #print('E_MP2=',E_MP2)
-    #print('RHF_E+E_MP2=',RHF_dic['RHF_E']+E_MP2)
+    #Transformation
+    MO_F = numpy.matmul(numpy.matmul(RHF_dic['RHF_C'].T,RHF_dic['RHF_F']),RHF_dic['RHF_C'])
+    MO_twomatrix = twomatrix_transform(AO_twomatrix,RHF_dic['RHF_C'])
+
+    ##MP2
+    E_MP2=MP2(MO_twomatrix,MO_F)
+    print('E_MP2=',E_MP2)
+    print('RHF_E+E_MP2=',RHF_dic['RHF_E']+E_MP2)
     ##MP3
     #E_MP3=MP3_class(MO_twomatrix,RHF_dic['RHF_vals']).E_MP3_func()
     #print('E_MP3=',E_MP3)
