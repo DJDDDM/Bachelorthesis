@@ -42,7 +42,7 @@ function main()
     if doRHF == 1
         NOCC = convert(Int,NELEC/2)
         NVIRT = NORB-NOCC
-        E_RHF,vals, C = RHF(two,H,E_nucc,NORB,NOCC)
+        E_RHF, C = RHF_main(H,two)
         println("finished RHF E = $(E_RHF)")
     end
 
@@ -121,59 +121,111 @@ function FCIread()
     return two,H,E_nucc,NORB,NELEC
 end
 
-function RHF(two,H,E_nucc,NORB,NOCC)
-    E = 0.0
-    E_old = 0.0
-    C = Matrix{Float64}(I,NORB,NORB)
+mutable struct RHF_container_struct
+    NORB
+    NOCC
+    Energy
+    AOtoCO
+    Fock
+    Density
+    Oneelectron
+    Twoelectron
+    iters
+    diis_error
+    hasnotconverged
+    Nuclearenergy
+    DIIS_container
+end
+
+    
+function RHF_main(Oneelectron,Twoelectron)
+    RHF_container = RHF_init(Oneelectron,Twoelectron)
+    while RHF_container.hasnotconverged
+        RHF_Loop(RHF_container)
+    end
+    return RHF_container.Energy, RHF_container.AOtoCO
+end
+
+function RHF_init(Oneelectron,Twoelectron)
+    Energy = 0.0
+    AOtoCO = Matrix{Float64}(I,NORB,NORB)
+    Fock = zeros(NORB,NORB)
+    Density = zeros(NORB,NORB)
+    Oneelectron = Oneelectron
+    Twoelectron = Twoelectron
     iters = 1
-    vals = zeros((NORB))
-
+    diis_error = 0.0
+    hasnotconverged = true
+    Nuclearenergy = E_nucc
     DIIS_container = DIIS_init()
+    RHF_container = RHF_container_struct(NORB,NOCC,Energy,AOtoCO,Fock,Density,Oneelectron,Twoelectron,iters,diis_error,hasnotconverged,Nuclearenergy,DIIS_container)
+    return RHF_container
+end
 
-    while true
-    #C = Transformationmatrix
-    #P = Densitymatrix
-    #H = onelectronmatrix
-    #two = twoelectronmatrix
-    #Einsteinconvention
-
-    #C -> P
-    P = C[:,1:NOCC]*C[:,1:NOCC]'
-
-    #P -> F
-    F = H
-    F += 2*tensorcontract(two,["my","ny","si","la"],P,["la","si"])
-    F -= tensorcontract(two,["my","la","si","ny"],P,["la","si"])
-
-    #E
-    E = E_nucc + tensorcontract(P,["my","ny"],(H+F),["ny","my"])[]
-
-    #DIIS
-    F,diis_error = DIIS(DIIS_container,F,P,E,iters)
-    #println(diis_error)
-    println("E=",E,"iters=",iters)
-
-    #F -> C
-    eig = LinearAlgebra.eigen(F)
-    C = eig.vectors
-    vals = eig.values
-    idx = sortperm(vals)
-    vals = vals[idx]
-    C = C[:,idx]
-
-
-    #loop control
-    if  diis_error < 10^-6
-        println("RHF converged after",iters,"iterations with energy", E)
-        break
-        end
-    if iters > 1000
-        break
+function RHF_Loop(RHF_container)
+        doDensity(RHF_container)
+        doFock(RHF_container)
+        doEnergy(RHF_container)
+        doDIIS(RHF_container)
+        doAOtoCO(RHF_container)
+        doLoopcontrol(RHF_container)
     end
-    E_old = E
-    iters += 1
+
+function doDensity(RHF_container)
+    RHF_container.Density = RHF_container.AOtoCO[:,1:NOCC]*RHF_container.AOtoCO[:,1:NOCC]'
+end
+
+function doFock(RHF_container)
+    RHF_container.Fock = RHF_container.Oneelectron +
+                2*tensorcontract(RHF_container.Twoelectron,["my","ny","si","la"],RHF_container.Density,["la","si"]) -
+                tensorcontract(RHF_container.Twoelectron,["my","la","si","ny"],RHF_container.Density,["la","si"])
+end
+
+function doEnergy(RHF_container)
+        RHF_container.Energy = RHF_container.Nuclearenergy +
+            tensorcontract(RHF_container.Density,["my","ny"],(RHF_container.Oneelectron+RHF_container.Fock),["ny","my"])[]
+        println("E=",RHF_container.Energy,"iters=",RHF_container.iters)
+end
+
+function doDIIS(RHF_container)
+        RHF_container.Fock,RHF_container.diis_error = DIIS(RHF_container.DIIS_container,RHF_container.Fock,RHF_container.Density,RHF_container.Energy,RHF_container.iters)
+end
+
+function doAOtoCO(RHF_container)
+        RHF_container.AOtoCO, Eigenvalues = sortedEigenvaluesolver(RHF_container.Fock)
+end
+
+    function sortedEigenvaluesolver(MatrixToSolve)
+        Eigenvectors, Eigenvalues = Eigenvaluesolver(MatrixToSolve)
+        Eigenvectors, Eigenvalues = sort_Eigenvectors(Eigenvectors,Eigenvalues)
+        return Eigenvectors, Eigenvalues
     end
-return E, vals, C
+    
+    function Eigenvaluesolver(ToSolve)
+        Eigencontainer = LinearAlgebra.eigen(ToSolve)
+        Eigenvectors = Eigencontainer.vectors
+        Eigenvalues = Eigencontainer.values
+        return Eigenvectors,Eigenvalues
+    end
+    
+    function sort_Eigenvectors(Eigenvector,Eigenvalues)
+        sortingindex = sortperm(Eigenvalues)
+        Eigenvalues = Eigenvalues[sortingindex]
+        Eigenvector = Eigenvector[:,sortingindex]
+        return Eigenvector,Eigenvalues
+    end
+
+function doLoopcontrol(RHF_container)
+    if  RHF_container.diis_error < 10^-6
+        println("RHF converged after",RHF_container.iters,"iterations with energy", RHF_container.Energy)
+        RHF_container.hasnotconverged = false
+    elseif RHF_container.iters > 1000
+        println("RHF not converged after ",RHF_container.iters," iters")
+        RHF_container.hasnotconverged = false
+    else
+        RHF_container.iters += 1
+        RHF_container.hasnotconverged = true
+    end
 end
 
 function transformtwo(C,twoAO)
